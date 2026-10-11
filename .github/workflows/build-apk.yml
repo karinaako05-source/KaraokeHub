@@ -37,19 +37,55 @@ jobs:
           flutter config --no-analytics
           flutter create . --platforms=android --org=com.karaokehub --project-name=karaokehub_next
 
-      - name: Inject Package ID and Native JNI Libraries
+      - name: Configure Android Package ID and Native Bridge
         run: |
-          # Set applicationId and namespace to com.karaokehub.next
+          # 1. Update Application ID and Namespace
           if [ -f android/app/build.gradle ]; then
-            sed -i 's/applicationId ".*"/applicationId "com.karaokehub.next"/' android/app/build.gradle
-            sed -i 's/namespace ".*"/namespace "com.karaokehub.next"/' android/app/build.gradle
+            sed -i 's/applicationId .*/applicationId com.karaokehub.next/' android/app/build.gradle
+            sed -i 's/namespace .*/namespace com.karaokehub.next/' android/app/build.gradle
           fi
           if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/applicationId = ".*"/applicationId = "com.karaokehub.next"/' android/app/build.gradle.kts
-            sed -i 's/namespace = ".*"/namespace = "com.karaokehub.next"/' android/app/build.gradle.kts
+            sed -i 's/applicationId = .*/applicationId = com.karaokehub.next/' android/app/build.gradle.kts
+            sed -i 's/namespace = .*/namespace = com.karaokehub.next/' android/app/build.gradle.kts
           fi
 
-          # Copy native JNI libraries into generated android app structure
+          # 2. Write custom MainActivity with MethodChannel in the actual generated package location
+          PACKAGE_DIR="android/app/src/main/kotlin/com/karaokehub/karaokehub_next"
+          if [ ! -d "$PACKAGE_DIR" ]; then
+            PACKAGE_DIR="android/app/src/main/kotlin/com/karaokehub/next"
+            mkdir -p "$PACKAGE_DIR"
+          fi
+
+          cat << 'EOF' > "$PACKAGE_DIR/MainActivity.kt"
+package com.karaokehub.next
+
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity: FlutterActivity() {
+    private val AUDIO_CHANNEL = "com.karaokehub.next/audio_engine"
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUDIO_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "initEngine" -> result.success(true)
+                "loadSong" -> result.success(true)
+                "play" -> result.success(true)
+                "pause" -> result.success(true)
+                "stop" -> result.success(true)
+                "setPitch" -> result.success(true)
+                "setTempo" -> result.success(true)
+                else -> result.notImplemented()
+            }
+        }
+    }
+}
+EOF
+
+          # 3. Copy native JNI libraries into generated android structure
           mkdir -p android/app/src/main/jniLibs
           if [ -d native_libs ]; then
             cp -r native_libs/* android/app/src/main/jniLibs/
