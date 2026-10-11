@@ -52,10 +52,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   _buildCircleBtn(Icons.settings_rounded, 'Settings', () => _showDialog('Settings', 'Configure audio output and soundfonts.')),
                   const SizedBox(width: 10),
-                  _buildCircleBtn(Icons.help_outline_rounded, 'Help', () => _showDialog('Help & User Guide', 'Videoke Operating Controls:
-• Song Search: Type 5-digit number or title.
-• Queue: Reserve songs.
-• Player: Pitch and tempo controls.')),
+                  _buildCircleBtn(Icons.help_outline_rounded, 'Help', () => _showDialog('Help & User Guide', 'Videoke Operating Controls:\n• Song Search: Type 5-digit number or title.\n• Queue: Reserve songs.\n• Player: Pitch and tempo controls.')),
                   const SizedBox(width: 10),
                   _buildCircleBtn(Icons.qr_code_2_rounded, 'QR Remote', () => _showDialog('Mobile Remote Pairing', 'Scan QR code to connect mobile phones as wireless songbook remotes.')),
                   const Spacer(),
