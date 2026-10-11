@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 import '../models/song_item.dart';
 import '../services/audio_engine_service.dart';
 import '../services/videoke_flow_manager.dart';
@@ -30,10 +32,17 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   List<Map<String, dynamic>> _timedLyrics = [];
   int _activeLyricIndex = -1;
 
+  // BGV (Background Video) State
+  VideoPlayerController? _bgvController;
+  final List<String> _bgvVideos = [];
+  int _currentBgvIndex = 0;
+  bool _isBgvEnabled = true;
+
   @override
   void initState() {
     super.initState();
     _flow.addListener(_onFlowChanged);
+    _initBgv();
 
     // If song was passed and nothing is playing, play it
     if (widget.song != null && (_flow.currentSong == null || _flow.currentSong!.code != widget.song!.code)) {
@@ -83,6 +92,73 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
     });
   }
 
+  void _initBgv() {
+    final candidateDirs = [
+      '/sdcard/Download/bgv',
+      '/sdcard/Download/bvg',
+      '/storage/emulated/0/Download/bgv',
+      '/storage/emulated/0/Download/bvg',
+      '/sdcard/Download/VideoDownloader/Facebook',
+      '/storage/emulated/0/Download/VideoDownloader/Facebook',
+      '/sdcard/Download',
+      '/storage/emulated/0/Download',
+      '/sdcard/KaraokeHub/bgv',
+    ];
+
+    for (final d in candidateDirs) {
+      try {
+        final dir = Directory(d);
+        if (dir.existsSync()) {
+          final files = dir.listSync().whereType<File>().where((f) {
+            final lower = f.path.toLowerCase();
+            return lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi');
+          }).toList();
+          for (final f in files) {
+            if (!_bgvVideos.contains(f.path)) {
+              _bgvVideos.add(f.path);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (_bgvVideos.isNotEmpty) {
+      _loadBgvVideo(_bgvVideos.first);
+    }
+  }
+
+  void _loadBgvVideo(String path) {
+    _bgvController?.dispose();
+    _bgvController = VideoPlayerController.file(File(path))
+      ..initialize().then((_) {
+        if (mounted) {
+          _bgvController?.setLooping(true);
+          _bgvController?.setVolume(0.0); // Muted background video
+          _bgvController?.play();
+          setState(() {});
+        }
+      });
+  }
+
+  void _cycleNextBgv() {
+    if (_bgvVideos.isEmpty) return;
+    setState(() {
+      _currentBgvIndex = (_currentBgvIndex + 1) % _bgvVideos.length;
+    });
+    _loadBgvVideo(_bgvVideos[_currentBgvIndex]);
+  }
+
+  void _toggleBgv() {
+    setState(() {
+      _isBgvEnabled = !_isBgvEnabled;
+      if (!_isBgvEnabled) {
+        _bgvController?.pause();
+      } else {
+        _bgvController?.play();
+      }
+    });
+  }
+
   void _onFlowChanged() {
     if (mounted) setState(() {});
   }
@@ -91,6 +167,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   void dispose() {
     _flow.removeListener(_onFlowChanged);
     _playbackTimer?.cancel();
+    _bgvController?.dispose();
     super.dispose();
   }
 
@@ -112,8 +189,43 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF030509),
-      body: Stack(
         children: [
+          // Background Video (BGV) Layer
+          if (_isBgvEnabled && _bgvController != null && _bgvController!.value.isInitialized)
+            Positioned.fill(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _bgvController!.value.size.width,
+                  height: _bgvController!.value.size.height,
+                  child: VideoPlayer(_bgvController!),
+                ),
+              ),
+            ),
+
+          // Dark Tint Gradient Overlay for Lyric Contrast
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: _isBgvEnabled && _bgvController != null && _bgvController!.value.isInitialized
+                      ? [
+                          Colors.black.withOpacity(0.70),
+                          Colors.black.withOpacity(0.55),
+                          Colors.black.withOpacity(0.85),
+                        ]
+                      : [
+                          const Color(0xFF030509),
+                          const Color(0xFF080D1A),
+                          const Color(0xFF030509),
+                        ],
+                ),
+              ),
+            ),
+          ),
+
           // Background Cyber Aesthetic Ambient Glow
           Positioned(
             top: -100,
@@ -183,21 +295,62 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                           ),
                         ],
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF101624),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white.withOpacity(0.08)),
-                        ),
-                        child: Text(
-                          current.code,
-                          style: const TextStyle(
-                            color: Color(0xFF00F2FE),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                      // BGV and Song Code Header Cluster
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_bgvVideos.isNotEmpty)
+                            InkWell(
+                              onTap: _cycleNextBgv,
+                              onLongPress: _toggleBgv,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _isBgvEnabled ? const Color(0xFF1E293B) : Colors.black45,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _isBgvEnabled ? const Color(0xFF00F2FE).withOpacity(0.4) : Colors.white12,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _isBgvEnabled ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                                      size: 13,
+                                      color: _isBgvEnabled ? const Color(0xFF00F2FE) : Colors.white38,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'BGV ${_currentBgvIndex + 1}/${_bgvVideos.length}',
+                                      style: TextStyle(
+                                        color: _isBgvEnabled ? Colors.white : Colors.white38,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF101624),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.white.withOpacity(0.08)),
+                            ),
+                            child: Text(
+                              current.code,
+                              style: const TextStyle(
+                                color: Color(0xFF00F2FE),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),

@@ -32,6 +32,9 @@ class MainActivity: FlutterActivity() {
     private var currentPitch: Float = 1.0f
     private var currentTempo: Float = 1.0f
     private var lastExtractedLyrics: List<Map<String, Any>> = emptyList()
+    private var sfSynth: SoundFontSynth? = null
+    private var isUsingSfSynth: Boolean = false
+    private var soundFontLoadedPath: String? = null
 
     // 256-bit AES Key and 128-bit IV for MKMD slices from shubblob
     private val AES_KEY = byteArrayOf(
@@ -54,6 +57,37 @@ class MainActivity: FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         promptStoragePermissionIfNeeded()
+        initSoundFont()
+    }
+
+    private fun initSoundFont() {
+        if (sfSynth != null && sfSynth?.isReady() == true) return
+        val candidateSf2 = listOf(
+            "/sdcard/Download/soundfont.sf2",
+            "/sdcard/Download/idx/soundfont.sf2",
+            "/sdcard/KaraokeHub/soundfont.sf2",
+            "/storage/emulated/0/Download/soundfont.sf2",
+            "/sdcard/CodeOnTheGoProjects/PinoyVideokeNative/app/build/intermediates/assets/debug/soundfont.sf2"
+        )
+        for (p in candidateSf2) {
+            try {
+                val f = File(p)
+                if (f.exists() && f.length() > 0) {
+                    val synth = SoundFontSynth()
+                    val ok = synth.init(f.readBytes())
+                    if (ok) {
+                        sfSynth = synth
+                        soundFontLoadedPath = p
+                        sfSynth?.onComplete = {
+                            runOnUiThread {
+                                methodChannel?.invokeMethod("onSongEnded", null)
+                            }
+                        }
+                        break
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
     }
 
     private fun promptStoragePermissionIfNeeded() {
@@ -185,17 +219,27 @@ class MainActivity: FlutterActivity() {
 
                             val midiFile = extractAndDecryptSlice(resolvedBlobPath, sectorOffset, sectorLength)
                             if (midiFile != null && midiFile.exists()) {
-                                mediaPlayer?.release()
-                                mediaPlayer = MediaPlayer().apply {
-                                    setDataSource(midiFile.absolutePath)
-                                    prepare()
-                                    applyPlaybackParams()
-                                    setOnCompletionListener {
-                                        methodChannel?.invokeMethod("onSongEnded", null)
+                                if (sfSynth != null && sfSynth?.isReady() == true) {
+                                    mediaPlayer?.release()
+                                    mediaPlayer = null
+                                    sfSynth?.loadMidi(midiFile.readBytes())
+                                    isUsingSfSynth = true
+                                    methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
+                                    result.success(true)
+                                } else {
+                                    isUsingSfSynth = false
+                                    mediaPlayer?.release()
+                                    mediaPlayer = MediaPlayer().apply {
+                                        setDataSource(midiFile.absolutePath)
+                                        prepare()
+                                        applyPlaybackParams()
+                                        setOnCompletionListener {
+                                            methodChannel?.invokeMethod("onSongEnded", null)
+                                        }
                                     }
+                                    methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
+                                    result.success(true)
                                 }
-                                methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
-                                result.success(true)
                             } else {
                                 result.success(false)
                             }
@@ -205,24 +249,39 @@ class MainActivity: FlutterActivity() {
                     }
                     "play" -> {
                         try {
-                            mediaPlayer?.start()
-                            result.success(true)
+                            if (isUsingSfSynth) {
+                                sfSynth?.play()
+                                result.success(true)
+                            } else {
+                                mediaPlayer?.start()
+                                result.success(true)
+                            }
                         } catch (e: Exception) {
                             result.success(false)
                         }
                     }
                     "pause" -> {
                         try {
-                            mediaPlayer?.pause()
-                            result.success(true)
+                            if (isUsingSfSynth) {
+                                sfSynth?.pause()
+                                result.success(true)
+                            } else {
+                                mediaPlayer?.pause()
+                                result.success(true)
+                            }
                         } catch (e: Exception) {
                             result.success(false)
                         }
                     }
                     "stop" -> {
                         try {
-                            mediaPlayer?.stop()
-                            result.success(true)
+                            if (isUsingSfSynth) {
+                                sfSynth?.stop()
+                                result.success(true)
+                            } else {
+                                mediaPlayer?.stop()
+                                result.success(true)
+                            }
                         } catch (e: Exception) {
                             result.success(false)
                         }
@@ -230,25 +289,44 @@ class MainActivity: FlutterActivity() {
                     "seekTo" -> {
                         val positionMs = call.argument<Int>("positionMs") ?: 0
                         try {
-                            mediaPlayer?.seekTo(positionMs)
-                            result.success(true)
+                            if (isUsingSfSynth) {
+                                sfSynth?.seekMs(positionMs)
+                                result.success(true)
+                            } else {
+                                mediaPlayer?.seekTo(positionMs)
+                                result.success(true)
+                            }
                         } catch (e: Exception) {
                             result.success(false)
                         }
                     }
                     "getPosition" -> {
                         try {
-                            result.success(mediaPlayer?.currentPosition ?: 0)
+                            if (isUsingSfSynth) {
+                                result.success(sfSynth?.currentMs() ?: 0)
+                            } else {
+                                result.success(mediaPlayer?.currentPosition ?: 0)
+                            }
                         } catch (e: Exception) {
                             result.success(0)
                         }
                     }
                     "getDuration" -> {
                         try {
-                            result.success(mediaPlayer?.duration ?: 0)
+                            if (isUsingSfSynth) {
+                                result.success(sfSynth?.durationMs() ?: 0)
+                            } else {
+                                result.success(mediaPlayer?.duration ?: 0)
+                            }
                         } catch (e: Exception) {
                             result.success(0)
                         }
+                    }
+                    "getSynthStatus" -> {
+                        result.success(mapOf(
+                            "soundfontActive" to (sfSynth?.isReady() == true),
+                            "soundfontPath" to (soundFontLoadedPath ?: "Android Native Sonivox Synth")
+                        ))
                     }
                     "setPitch" -> {
                         val semitones = call.argument<Int>("semitones") ?: 0
