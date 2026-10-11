@@ -189,6 +189,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF030509),
+      body: Stack(
         children: [
           // Background Video (BGV) Layer
           if (_isBgvEnabled && _bgvController != null && _bgvController!.value.isInitialized)
