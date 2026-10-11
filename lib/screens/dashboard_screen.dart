@@ -7,6 +7,7 @@ import '../services/song_catalog_service.dart';
 import '../services/videoke_flow_manager.dart';
 import 'home_screen.dart';
 import 'karaoke_player_screen.dart';
+import 'settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -137,7 +138,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               // Top System Bar
               Row(
                 children: [
-                  _buildCircleBtn(Icons.settings_rounded, 'Settings', () => _showDialog('Settings', 'Audio Output: Native Android Synthesizer\nAES Engine: Hardware Accelerated\nVolume: Balanced')),
+                  _buildCircleBtn(Icons.settings_rounded, 'Settings', () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                  }),
                   const SizedBox(width: 10),
                   _buildCircleBtn(Icons.help_outline_rounded, 'Help', () => _showDialog('Help & User Guide', 'Videoke Operating Controls:\n• Keypad: Type 5-digit number and tap ENTER to reserve.\n• Queue: First-In-First-Out reservation queue with Priority Reserve.\n• Player: Authentic Key pitch shift (-12 to +12) and Tempo regulator.')),
                   const SizedBox(width: 10),
