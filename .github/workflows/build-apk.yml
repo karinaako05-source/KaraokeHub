@@ -63,34 +63,7 @@ jobs:
           # 3. Copy Native C++ SoundFont synthesizer source and configure CMake
           mkdir -p android/app/src/main/cpp
           cp templates/cpp/* android/app/src/main/cpp/
-
-          # Inject externalNativeBuild into android block of build.gradle / build.gradle.kts
-          if [ -f android/app/build.gradle ]; then
-            python3 -c '
-with open("android/app/build.gradle", "r") as f:
-    content = f.read()
-if "externalNativeBuild" not in content:
-    idx = content.find("android {")
-    if idx != -1:
-        insert = "\n    externalNativeBuild {\n        cmake {\n            path \"src/main/cpp/CMakeLists.txt\"\n        }\n    }\n"
-        content = content[:idx+9] + insert + content[idx+9:]
-        with open("android/app/build.gradle", "w") as f:
-            f.write(content)
-'
-          fi
-          if [ -f android/app/build.gradle.kts ]; then
-            python3 -c '
-with open("android/app/build.gradle.kts", "r") as f:
-    content = f.read()
-if "externalNativeBuild" not in content:
-    idx = content.find("android {")
-    if idx != -1:
-        insert = "\n    externalNativeBuild {\n        cmake {\n            path = file(\"src/main/cpp/CMakeLists.txt\")\n        }\n    }\n"
-        content = content[:idx+9] + insert + content[idx+9:]
-        with open("android/app/build.gradle.kts", "w") as f:
-            f.write(content)
-'
-          fi
+          python3 templates/patch_gradle.py
 
           # 4. Add storage and network permissions to AndroidManifest.xml
           MANIFEST_FILE="android/app/src/main/AndroidManifest.xml"
