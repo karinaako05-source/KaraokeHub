@@ -47,19 +47,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top System Bar (Settings, Help, QR Remote, Live Clock)
+              // Top System Bar
               Row(
                 children: [
-                  _buildCircleBtn(Icons.settings_rounded, 'Settings', () => _showDialog('Settings', 'Configure BASS audio output, soundfonts, and microphone setup.')),
+                  _buildCircleBtn(Icons.settings_rounded, 'Settings', () => _showDialog('Settings', 'Configure audio output and soundfonts.')),
                   const SizedBox(width: 10),
                   _buildCircleBtn(Icons.help_outline_rounded, 'Help', () => _showDialog('Help & User Guide', 'Videoke Operating Controls:
 • Song Search: Type 5-digit number or title.
-• Queue: Reserve up to 99 songs.
-• Player: Pitch key and tempo sliders.')),
+• Queue: Reserve songs.
+• Player: Pitch and tempo controls.')),
                   const SizedBox(width: 10),
                   _buildCircleBtn(Icons.qr_code_2_rounded, 'QR Remote', () => _showDialog('Mobile Remote Pairing', 'Scan QR code to connect mobile phones as wireless songbook remotes.')),
                   const Spacer(),
-                  // Realtime Clock Badge
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
@@ -122,7 +121,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 24),
 
-              // The 5 Core Authentic Videoke Hub Cards
+              // The 6 Hub Action Cards
               Expanded(
                 child: GridView.count(
                   crossAxisCount: 2,
@@ -130,7 +129,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   mainAxisSpacing: 14,
                   childAspectRatio: 1.15,
                   children: [
-                    // 1. Song Search (Catalog)
+                    // 1. Song Search
                     _buildHubCard(
                       icon: Icons.search_rounded,
                       title: 'SONG SEARCH',
@@ -143,7 +142,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       },
                     ),
 
-                    // 2. Karaoke Stage (Now Playing)
+                    // 2. Karaoke Stage
                     _buildHubCard(
                       icon: Icons.play_circle_fill_rounded,
                       title: 'KARAOKE STAGE',
@@ -179,7 +178,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       },
                     ),
 
-                    // 4. Rankings / Scores
+                    // 4. Rankings
                     _buildHubCard(
                       icon: Icons.leaderboard_rounded,
                       title: 'RANKINGS',
@@ -211,7 +210,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       accentColor: const Color(0xFF81C784),
                       onTap: () => _showDialog('Storage Diagnostics', 'Storage Path: /sdcard/Download
 Database: SQLite Active
-SoundFont: BASSMIDI Standard Loaded'),
+SoundFont: BASSMIDI Loaded'),
                     ),
                   ],
                 ),
