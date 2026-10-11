@@ -33,19 +33,28 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate Official Android Platform Files
+      - name: Generate Official Android Platform
         run: |
-          # Backup custom files
-          mkdir -p /tmp/backup_app
-          cp -r android/app/build.gradle.kts android/app/src /tmp/backup_app/
+          flutter config --no-analytics
+          flutter create . --platforms=android --org=com.karaokehub --project-name=karaokehub_next
 
-          # Generate official Flutter android scaffolding
-          rm -rf android
-          flutter create . --platforms=android --org=com.karaokehub.next
+      - name: Inject Package ID and Native JNI Libraries
+        run: |
+          # Set applicationId and namespace to com.karaokehub.next
+          if [ -f android/app/build.gradle ]; then
+            sed -i 's/applicationId ".*"/applicationId "com.karaokehub.next"/' android/app/build.gradle
+            sed -i 's/namespace ".*"/namespace "com.karaokehub.next"/' android/app/build.gradle
+          fi
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/applicationId = ".*"/applicationId = "com.karaokehub.next"/' android/app/build.gradle.kts
+            sed -i 's/namespace = ".*"/namespace = "com.karaokehub.next"/' android/app/build.gradle.kts
+          fi
 
-          # Restore custom build.gradle.kts and src (MainActivity + JNI libs)
-          cp /tmp/backup_app/build.gradle.kts android/app/build.gradle.kts
-          cp -r /tmp/backup_app/src/* android/app/src/
+          # Copy native JNI libraries into generated android app structure
+          mkdir -p android/app/src/main/jniLibs
+          if [ -d native_libs ]; then
+            cp -r native_libs/* android/app/src/main/jniLibs/
+          fi
 
       - name: Install Project Dependencies
         run: flutter pub get
