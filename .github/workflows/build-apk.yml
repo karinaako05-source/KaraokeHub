@@ -33,8 +33,15 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Verify Flutter Installation
-        run: flutter doctor -v
+      - name: Configure Flutter Android Project
+        run: |
+          flutter config --no-analytics
+          flutter create . --platforms=android --org=com.karaokehub.next
+
+      - name: Restore Custom Android Configuration
+        run: |
+          # Ensure custom build.gradle.kts and AndroidManifest are preserved
+          git checkout android/app/build.gradle.kts android/app/src/main/AndroidManifest.xml android/app/src/main/kotlin/com/karaokehub/next/MainActivity.kt
 
       - name: Install Project Dependencies
         run: flutter pub get
