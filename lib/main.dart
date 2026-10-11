@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'screens/home_screen.dart';
+import 'screens/dashboard_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,15 +17,15 @@ class KaraokeHubNextApp extends StatelessWidget {
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF090B10),
+        scaffoldBackgroundColor: const Color(0xFF06080E),
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF00F2FE),
           secondary: Color(0xFF9B51E0),
-          surface: Color(0xFF141824),
+          surface: Color(0xFF101624),
         ),
-        textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme),
+        fontFamily: 'sans-serif',
       ),
-      home: const HomeScreen(),
+      home: const DashboardScreen(),
     );
   }
 }
