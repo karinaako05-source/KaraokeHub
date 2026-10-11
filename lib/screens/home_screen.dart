@@ -1,7 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/song_item.dart';
 import '../services/audio_engine_service.dart';
+import '../services/song_catalog_service.dart';
+import '../services/videoke_flow_manager.dart';
 import '../widgets/song_tile.dart';
 import 'karaoke_player_screen.dart';
 
@@ -14,534 +15,582 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final SongCatalogService _catalog = SongCatalogService();
+  final VideokeFlowManager _flow = VideokeFlowManager();
   final AudioEngineService _audio = AudioEngineService();
 
   String _selectedGenre = 'ALL';
-  SongItem? _currentlyPlaying;
-  final List<SongItem> _queue = [];
-  final List<SongItem> _songCatalog = [];
-
-  // Digital Keypad buffer for 5-digit videoke song code
   String _keypadInput = '';
 
   @override
   void initState() {
     super.initState();
-    _audio.initEngine();
-    _loadInitialSongs();
+    _catalog.addListener(_onStateChanged);
+    _flow.addListener(_onStateChanged);
   }
 
-  void _loadInitialSongs() {
-    // 1. Built-in Videoke Classic Hits
-    final defaultHits = [
-      const SongItem(code: "71001", title: "Ang Huling El Bimbo", artist: "Eraserheads", genre: "OPM"),
-      const SongItem(code: "71002", title: "With a Smile", artist: "Eraserheads", genre: "OPM"),
-      const SongItem(code: "71003", title: "214", artist: "Rivermaya", genre: "OPM"),
-      const SongItem(code: "71004", title: "Kisapmata", artist: "Rivermaya", genre: "OPM"),
-      const SongItem(code: "71005", title: "Jopay", artist: "Mayonnaise", genre: "ROCK"),
-      const SongItem(code: "71006", title: "Noypi", artist: "Bamboo", genre: "ROCK"),
-      const SongItem(code: "71007", title: "Beer", artist: "Itchyworms", genre: "OPM"),
-      const SongItem(code: "71008", title: "Buwan", artist: "juan karlos", genre: "POP"),
-    ];
-    _songCatalog.addAll(defaultHits);
-
-    // 2. Scan device /sdcard/Download folder for real media files
-    try {
-      final dir = Directory('/sdcard/Download');
-      if (dir.existsSync()) {
-        final files = dir.listSync();
-        int customCode = 80001;
-        for (var entity in files) {
-          if (entity is File && entity.path.toLowerCase().endsWith('.mp3')) {
-            final fileName = entity.uri.pathSegments.last.replaceAll('.mp3', '');
-            final parts = fileName.split('-');
-            final artist = parts.isNotEmpty ? parts[0].trim() : 'Local Artist';
-            final title = parts.length > 1 ? parts[1].trim() : fileName;
-            
-            _songCatalog.add(
-              SongItem(
-                code: "$customCode",
-                title: title,
-                artist: artist,
-                genre: "LOCAL",
-                filePath: entity.path,
-              ),
-            );
-            customCode++;
-          }
-        }
-      }
-    } catch (_) {}
-    setState(() {});
+  @override
+  void dispose() {
+    _catalog.removeListener(_onStateChanged);
+    _flow.removeListener(_onStateChanged);
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
-  List<SongItem> get _filteredSongs {
-    final q = _searchCtrl.text.trim().toLowerCase();
-    return _songCatalog.where((s) {
-      final matchesGenre = _selectedGenre == 'ALL' || s.genre == _selectedGenre;
-      final matchesQuery = q.isEmpty ||
-          s.title.toLowerCase().contains(q) ||
-          s.artist.toLowerCase().contains(q) ||
-          s.code.contains(q);
-      return matchesGenre && matchesQuery;
-    }).toList();
-  }
-
-  void _playSong(SongItem song) {
-    setState(() => _currentlyPlaying = song);
-    _audio.playSong(song.filePath);
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => KaraokePlayerScreen(
-          song: song,
-          queue: _queue,
-        ),
-      ),
-    );
-  }
-
-  void _addToQueue(SongItem song) {
-    setState(() => _queue.add(song));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: const Color(0xFF141926),
-        content: Text("Reserved (#${_queue.length}): ${song.code} - ${song.title}"),
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
-  void _onKeypadPress(String digit) {
-    if (_keypadInput.length < 5) {
-      setState(() => _keypadInput += digit);
-      if (_keypadInput.length == 5) {
-        final found = _songCatalog.firstWhere(
-          (s) => s.code == _keypadInput,
-          orElse: () => SongItem(code: _keypadInput, title: "Unknown Song", artist: "Unknown", genre: "CUSTOM"),
-        );
-        _addToQueue(found);
-        _keypadInput = '';
-      }
-    }
+  void _onStateChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final genres = ['ALL', 'OPM', 'ROCK', 'POP', 'LOCAL'];
+    final filteredSongs = _catalog.search(_searchCtrl.text, genre: _selectedGenre);
+    final genres = _catalog.getGenres();
 
     return Scaffold(
       backgroundColor: const Color(0xFF06080E),
-      body: SafeArea(
-        child: Column(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0C101B),
+        elevation: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Modern Videoke Console Bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
+            const Text(
+              'SONGBOOK & SEARCH',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                letterSpacing: 1.2,
+              ),
+            ),
+            Text(
+              '${_catalog.songs.length} Authenticated Videoke Songs',
+              style: const TextStyle(color: Color(0xFF00F2FE), fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
+            tooltip: 'Rescan Storage',
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Scanning storage for karaoke songs & blobs...')),
+              );
+              await _catalog.scanDeviceStorage();
+            },
+          ),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.queue_music_rounded, color: Colors.white),
+                onPressed: () => _showQueueDrawer(context),
+              ),
+              if (_flow.queue.isNotEmpty)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFF2A6D),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '${_flow.queue.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Search & Keypad triggers
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF101624),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.08)),
+                    ),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      onChanged: (_) => setState(() {}),
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      decoration: const InputDecoration(
+                        hintText: 'Search title, artist, or 5-digit code...',
+                        hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                        prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF00F2FE), size: 20),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                InkWell(
+                  onTap: () => _showKeypadModal(context),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFF00F2FE), Color(0xFF4FACFE)],
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.mic_external_on_rounded, color: Colors.black, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'KARAOKEHUB NEXT',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.5,
-                          color: Colors.white,
-                        ),
-                      ),
-                      Text(
-                        'MODERN VIDEOKE CONSOLE',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                          color: Color(0xFF00F2FE),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  // Remote Keypad Button
-                  IconButton(
-                    icon: const Icon(Icons.dialpad_rounded, color: Color(0xFF00F2FE)),
-                    tooltip: 'Digital Videoke Keypad',
-                    onPressed: () => _showKeypadModal(context),
-                  ),
-                  // Queue Button
-                  Stack(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.queue_music_rounded, color: Colors.white70),
-                        onPressed: () => _showQueueModal(context),
-                      ),
-                      if (_queue.isNotEmpty)
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF9B51E0),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Text(
-                              '${_queue.length}',
-                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.dialpad_rounded, color: Colors.black, size: 20),
+                        SizedBox(width: 6),
+                        Text(
+                          'KEYPAD',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            letterSpacing: 0.5,
                           ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
 
-            // Search Bar
-            Padding(
+          // Genre chips
+          SizedBox(
+            height: 38,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF101420),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withOpacity(0.08)),
-                ),
-                child: TextField(
-                  controller: _searchCtrl,
-                  onChanged: (_) => setState(() {}),
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Search title, artist or 5-digit song number...',
-                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
-                    prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00F2FE)),
-                    suffixIcon: _searchCtrl.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, color: Colors.white54),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() {});
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Category Chips
-            SizedBox(
-              height: 38,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: genres.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, idx) {
-                  final g = genres[idx];
-                  final isSelected = _selectedGenre == g;
-                  return ChoiceChip(
-                    label: Text(g),
+              itemCount: genres.length,
+              itemBuilder: (ctx, i) {
+                final genre = genres[i];
+                final isSelected = genre == _selectedGenre;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(genre),
                     selected: isSelected,
                     onSelected: (val) {
-                      if (val) setState(() => _selectedGenre = g);
+                      if (val) setState(() => _selectedGenre = genre);
                     },
-                    selectedColor: const Color(0xFF00F2FE),
-                    backgroundColor: const Color(0xFF101420),
+                    selectedColor: const Color(0xFF9B51E0),
+                    backgroundColor: const Color(0xFF101624),
                     labelStyle: TextStyle(
-                      color: isSelected ? Colors.black : Colors.white70,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
+                      color: isSelected ? Colors.white : Colors.white60,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 11,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(18),
                       side: BorderSide(
-                        color: isSelected ? const Color(0xFF00F2FE) : Colors.white.withOpacity(0.08),
+                        color: isSelected ? const Color(0xFF9B51E0) : Colors.white.withOpacity(0.08),
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Song Catalog
-            Expanded(
-              child: ListView.builder(
-                itemCount: _filteredSongs.length,
-                itemBuilder: (context, index) {
-                  final song = _filteredSongs[index];
-                  return SongTile(
-                    song: song,
-                    onPlay: () => _playSong(song),
-                    onQueue: () => _addToQueue(song),
-                  );
-                },
-              ),
-            ),
-
-            // Bottom Mini Player Bar
-            if (_currentlyPlaying != null)
-              GestureDetector(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => KaraokePlayerScreen(
-                        song: _currentlyPlaying!,
-                        queue: _queue,
-                      ),
-                    ),
-                  );
-                },
-                child: Container(
-                  margin: const EdgeInsets.all(12),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF141A28),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.35)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF00F2FE).withOpacity(0.15),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF00F2FE),
-                          shape: BoxShape.circle,
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Song List
+          Expanded(
+            child: filteredSongs.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.music_off_rounded, size: 48, color: Colors.white.withOpacity(0.2)),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No songs found matching query.',
+                          style: TextStyle(color: Colors.white54, fontSize: 14),
                         ),
-                        child: const Icon(Icons.music_note_rounded, color: Colors.black, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _currentlyPlaying!.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                            ),
-                            Text(
-                              "${_currentlyPlaying!.code} • ${_currentlyPlaying!.artist}",
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.open_in_full_rounded, color: Color(0xFF00F2FE)),
-                        tooltip: 'Open Full Videoke Stage',
-                        onPressed: () {
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: filteredSongs.length,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    itemBuilder: (ctx, idx) {
+                      final song = filteredSongs[idx];
+                      final isCurrent = _flow.currentSong?.code == song.code;
+                      return SongTile(
+                        song: song,
+                        isPlaying: isCurrent && _flow.isPlaying,
+                        onPlay: () {
+                          _flow.playSong(song);
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => KaraokePlayerScreen(
-                                song: _currentlyPlaying!,
-                                queue: _queue,
+                              builder: (_) => KaraokePlayerScreen(song: song),
+                            ),
+                          );
+                        },
+                        onReserve: () {
+                          _flow.reserve(song);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Reserved: ${song.title} (${song.code})'),
+                              duration: const Duration(seconds: 2),
+                              action: SnackBarAction(
+                                label: 'PRIORITY',
+                                textColor: const Color(0xFFFF2A6D),
+                                onPressed: () => _flow.reserve(song, priority: true),
                               ),
                             ),
                           );
                         },
-                      ),
-                    ],
+                      );
+                    },
                   ),
+          ),
+
+          // Mini Player Dock if song is active
+          if (_flow.currentSong != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F1523),
+                border: Border(top: BorderSide(color: Colors.white.withOpacity(0.08))),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00F2FE).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.mic_external_on_rounded, color: Color(0xFF00F2FE), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _flow.currentSong!.title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${_flow.currentSong!.artist} • ${_flow.currentSong!.code}',
+                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      _flow.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+                      color: const Color(0xFF00F2FE),
+                      size: 32,
+                    ),
+                    onPressed: () => _flow.togglePlayPause(),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_next_rounded, color: Colors.white70, size: 28),
+                    tooltip: 'Next Reserved Song',
+                    onPressed: () => _flow.next(),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.fullscreen_rounded, color: Colors.white70, size: 24),
+                    tooltip: 'Open Stage',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => KaraokePlayerScreen(song: _flow.currentSong!),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showQueueDrawer(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0C101B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final q = _flow.queue;
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'RESERVED QUEUE (${q.length})',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        if (q.isNotEmpty)
+                          TextButton(
+                            onPressed: () {
+                              _flow.clearQueue();
+                              setModalState(() {});
+                            },
+                            child: const Text('Clear All', style: TextStyle(color: Colors.redAccent)),
+                          ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white12),
+                    Expanded(
+                      child: q.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No songs reserved yet.\nSearch songs or use Keypad to reserve.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white38),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: q.length,
+                              itemBuilder: (ctx, i) {
+                                final item = q[i];
+                                return ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: const Color(0xFF101624),
+                                    child: Text('${i + 1}', style: const TextStyle(color: Color(0xFF00F2FE))),
+                                  ),
+                                  title: Text(item.title, style: const TextStyle(color: Colors.white)),
+                                  subtitle: Text('${item.artist} • ${item.code}', style: const TextStyle(color: Colors.white54)),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.close_rounded, color: Colors.white38),
+                                    onPressed: () {
+                                      _flow.removeFromQueue(item.code);
+                                      setModalState(() {});
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
   void _showKeypadModal(BuildContext context) {
+    _keypadInput = '';
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF0C101A),
+      backgroundColor: const Color(0xFF0A0E18),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setKeypadState) => Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'ENTER VIDEOKE NUMBER (5 DIGITS)',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.0,
-                  fontSize: 13,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '5-DIGIT VIDEOKE KEYPAD',
+                      style: TextStyle(
+                        color: Color(0xFF00F2FE),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Display Screen for Code
+                    Container(
+                      width: double.infinity,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF04060A),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        _keypadInput.isEmpty ? '_ _ _ _ _' : _keypadInput.padRight(5, '_'),
+                        style: const TextStyle(
+                          color: Color(0xFF00F2FE),
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 6,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Keypad grid
+                    Column(
+                      children: [
+                        _buildKeyRow(['1', '2', '3'], setModalState),
+                        const SizedBox(height: 10),
+                        _buildKeyRow(['4', '5', '6'], setModalState),
+                        const SizedBox(height: 10),
+                        _buildKeyRow(['7', '8', '9'], setModalState),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            _buildKeypadBtn('CLEAR', Colors.redAccent.withOpacity(0.2), Colors.redAccent, () {
+                              setModalState(() => _keypadInput = '');
+                            }),
+                            const SizedBox(width: 10),
+                            _buildKeypadBtn('0', const Color(0xFF131A2B), Colors.white, () {
+                              if (_keypadInput.length < 5) {
+                                _audio.playSfx('num_0');
+                                setModalState(() => _keypadInput += '0');
+                              }
+                            }),
+                            const SizedBox(width: 10),
+                            _buildKeypadBtn('ENTER', const Color(0xFF00F2FE), Colors.black, () {
+                              _handleKeypadEnter(context);
+                            }),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              // Code Display
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF141926),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.5)),
-                ),
-                child: Text(
-                  _keypadInput.isEmpty ? "-----" : _keypadInput.padRight(5, '-'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF00F2FE),
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 8,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Numpad 0-9
-              Wrap(
-                spacing: 12,
-                runSpacing: 10,
-                alignment: WrapAlignment.center,
-                children: [
-                  for (var i = 1; i <= 9; i++)
-                    _buildNumpadBtn('', () {
-                      _onKeypadPress('');
-                      setKeypadState(() {});
-                    }),
-                  _buildNumpadBtn('CLEAR', () {
-                    setState(() => _keypadInput = '');
-                    setKeypadState(() {});
-                  }, isAction: true),
-                  _buildNumpadBtn('0', () {
-                    _onKeypadPress('0');
-                    setKeypadState(() {});
-                  }),
-                  _buildNumpadBtn('DEL', () {
-                    if (_keypadInput.isNotEmpty) {
-                      setState(() => _keypadInput = _keypadInput.substring(0, _keypadInput.length - 1));
-                      setKeypadState(() {});
-                    }
-                  }, isAction: true),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
-  Widget _buildNumpadBtn(String label, VoidCallback onTap, {bool isAction = false}) {
-    return GestureDetector(
+  Widget _buildKeyRow(List<String> keys, void Function(void Function()) setModalState) {
+    return Row(
+      children: keys.map((key) {
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: _buildKeypadBtn(key, const Color(0xFF131A2B), Colors.white, () {
+              if (_keypadInput.length < 5) {
+                _audio.playSfx('num_$key');
+                setModalState(() => _keypadInput += key);
+              }
+            }),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildKeypadBtn(String label, Color bg, Color textColor, VoidCallback onTap) {
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: 80,
-        height: 52,
+        height: 48,
         decoration: BoxDecoration(
-          color: isAction ? const Color(0xFF1B2336) : const Color(0xFF141926),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(0.08)),
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.06)),
         ),
         alignment: Alignment.center,
         child: Text(
           label,
           style: TextStyle(
-            color: isAction ? const Color(0xFF9B51E0) : Colors.white,
-            fontSize: isAction ? 14 : 20,
-            fontWeight: FontWeight.w900,
+            color: textColor,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
           ),
         ),
       ),
     );
   }
 
-  void _showQueueModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF0C101A),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Song Queue / Reserved Songs',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() => _queue.clear());
-                      setModalState(() {});
-                    },
-                    child: const Text('Clear All', style: TextStyle(color: Colors.redAccent)),
-                  ),
-                ],
-              ),
-              const Divider(color: Colors.white12),
-              Expanded(
-                child: _queue.isEmpty
-                    ? const Center(
-                        child: Text('No songs reserved yet.', style: TextStyle(color: Colors.white54)),
-                      )
-                    : ListView.builder(
-                        itemCount: _queue.length,
-                        itemBuilder: (context, idx) {
-                          final song = _queue[idx];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: const Color(0xFF9B51E0),
-                              radius: 14,
-                              child: Text('${idx + 1}', style: const TextStyle(fontSize: 12)),
-                            ),
-                            title: Text(song.title, style: const TextStyle(color: Colors.white)),
-                            subtitle: Text("${song.code} • ${song.artist}", style: TextStyle(color: Colors.white.withOpacity(0.6))),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white38, size: 18),
-                              onPressed: () {
-                                setState(() => _queue.removeAt(idx));
-                                setModalState(() {});
-                              },
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
+  void _handleKeypadEnter(BuildContext context) {
+    if (_keypadInput.isEmpty) return;
+    final found = _catalog.findByCode(_keypadInput);
+    Navigator.of(context).pop();
+
+    if (found != null) {
+      _flow.reserve(found);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Song Found & Reserved: ${found.title} - ${found.artist} (${found.code})'),
+          backgroundColor: const Color(0xFF00F2FE),
+          action: SnackBarAction(
+            label: 'PLAY NOW',
+            textColor: Colors.black,
+            onPressed: () {
+              _flow.playSong(found);
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => KaraokePlayerScreen(song: found)),
+              );
+            },
           ),
         ),
-      ),
-    );
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Song code $_keypadInput not found in catalog.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 }

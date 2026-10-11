@@ -4,7 +4,8 @@ class SongItem {
   final String artist;
   final String genre;
   final String? filePath;
-  final bool isFavorite;
+  final int? blobOffset;
+  final int? blobLength;
 
   const SongItem({
     required this.code,
@@ -12,6 +13,33 @@ class SongItem {
     required this.artist,
     required this.genre,
     this.filePath,
-    this.isFavorite = false,
+    this.blobOffset,
+    this.blobLength,
   });
+
+  bool get isBlob => blobOffset != null && blobLength != null;
+
+  Map<String, dynamic> toMap() {
+    return {
+      'code': code,
+      'title': title,
+      'artist': artist,
+      'genre': genre,
+      'filePath': filePath,
+      'blobOffset': blobOffset,
+      'blobLength': blobLength,
+    };
+  }
+
+  factory SongItem.fromMap(Map<String, dynamic> map) {
+    return SongItem(
+      code: map['code'] as String? ?? '00000',
+      title: map['title'] as String? ?? 'Unknown Title',
+      artist: map['artist'] as String? ?? 'Unknown Artist',
+      genre: map['genre'] as String? ?? 'OPM',
+      filePath: map['filePath'] as String?,
+      blobOffset: map['blobOffset'] as int?,
+      blobLength: map['blobLength'] as int?,
+    );
+  }
 }
