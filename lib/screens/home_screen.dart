@@ -1,3 +1,4 @@
+import 'karaoke_player_screen.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/song_item.dart';
@@ -57,11 +58,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _currentlyPlaying = song;
     });
     _audio.play();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: const Color(0xFF161B26),
-        content: Text("Playing: ${song.code} - ${song.title}"),
-        duration: const Duration(seconds: 2),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => KaraokePlayerScreen(
+          song: song,
+          queue: _queue,
+        ),
       ),
     );
   }
@@ -244,7 +246,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
             // Bottom Mini Player Bar
             if (_currentlyPlaying != null)
-              Container(
+              GestureDetector(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => KaraokePlayerScreen(
+                        song: _currentlyPlaying!,
+                        queue: _queue,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
                 margin: const EdgeInsets.all(12),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
