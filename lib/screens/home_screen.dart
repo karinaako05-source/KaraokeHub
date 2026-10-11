@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/song_item.dart';
 import '../services/audio_engine_service.dart';
@@ -19,31 +19,65 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedGenre = 'ALL';
   SongItem? _currentlyPlaying;
   final List<SongItem> _queue = [];
+  final List<SongItem> _songCatalog = [];
 
-  final List<SongItem> _sampleSongs = const [
-    SongItem(code: "71001", title: "Ang Huling El Bimbo", artist: "Eraserheads", genre: "OPM"),
-    SongItem(code: "71002", title: "With a Smile", artist: "Eraserheads", genre: "OPM"),
-    SongItem(code: "71003", title: "214", artist: "Rivermaya", genre: "OPM"),
-    SongItem(code: "71004", title: "Kisapmata", artist: "Rivermaya", genre: "OPM"),
-    SongItem(code: "71005", title: "Jopay", artist: "Mayonnaise", genre: "ROCK"),
-    SongItem(code: "71006", title: "Noypi", artist: "Bamboo", genre: "ROCK"),
-    SongItem(code: "71007", title: "Beer", artist: "Itchyworms", genre: "OPM"),
-    SongItem(code: "71008", title: "Buwan", artist: "juan karlos", genre: "POP"),
-    SongItem(code: "71009", title: "Kathang Isip", artist: "Ben&Ben", genre: "ACOUSTIC"),
-    SongItem(code: "71010", title: "Araw-Araw", artist: "Ben&Ben", genre: "ACOUSTIC"),
-    SongItem(code: "71011", title: "Torete", artist: "Moonstar88", genre: "OPM"),
-    SongItem(code: "71012", title: "Bakit Ba Ikaw", artist: "Michael Pangilinan", genre: "POP"),
-  ];
+  // Digital Keypad buffer for 5-digit videoke song code
+  String _keypadInput = '';
 
   @override
   void initState() {
     super.initState();
     _audio.initEngine();
+    _loadInitialSongs();
+  }
+
+  void _loadInitialSongs() {
+    // 1. Built-in Videoke Classic Hits
+    final defaultHits = [
+      const SongItem(code: "71001", title: "Ang Huling El Bimbo", artist: "Eraserheads", genre: "OPM"),
+      const SongItem(code: "71002", title: "With a Smile", artist: "Eraserheads", genre: "OPM"),
+      const SongItem(code: "71003", title: "214", artist: "Rivermaya", genre: "OPM"),
+      const SongItem(code: "71004", title: "Kisapmata", artist: "Rivermaya", genre: "OPM"),
+      const SongItem(code: "71005", title: "Jopay", artist: "Mayonnaise", genre: "ROCK"),
+      const SongItem(code: "71006", title: "Noypi", artist: "Bamboo", genre: "ROCK"),
+      const SongItem(code: "71007", title: "Beer", artist: "Itchyworms", genre: "OPM"),
+      const SongItem(code: "71008", title: "Buwan", artist: "juan karlos", genre: "POP"),
+    ];
+    _songCatalog.addAll(defaultHits);
+
+    // 2. Scan device /sdcard/Download folder for real media files
+    try {
+      final dir = Directory('/sdcard/Download');
+      if (dir.existsSync()) {
+        final files = dir.listSync();
+        int customCode = 80001;
+        for (var entity in files) {
+          if (entity is File && entity.path.toLowerCase().endsWith('.mp3')) {
+            final fileName = entity.uri.pathSegments.last.replaceAll('.mp3', '');
+            final parts = fileName.split('-');
+            final artist = parts.isNotEmpty ? parts[0].trim() : 'Local Artist';
+            final title = parts.length > 1 ? parts[1].trim() : fileName;
+            
+            _songCatalog.add(
+              SongItem(
+                code: "$customCode",
+                title: title,
+                artist: artist,
+                genre: "LOCAL",
+                filePath: entity.path,
+              ),
+            );
+            customCode++;
+          }
+        }
+      }
+    } catch (_) {}
+    setState(() {});
   }
 
   List<SongItem> get _filteredSongs {
     final q = _searchCtrl.text.trim().toLowerCase();
-    return _sampleSongs.where((s) {
+    return _songCatalog.where((s) {
       final matchesGenre = _selectedGenre == 'ALL' || s.genre == _selectedGenre;
       final matchesQuery = q.isEmpty ||
           s.title.toLowerCase().contains(q) ||
@@ -54,10 +88,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _playSong(SongItem song) {
-    setState(() {
-      _currentlyPlaying = song;
-    });
-    _audio.play();
+    setState(() => _currentlyPlaying = song);
+    _audio.playSong(song.filePath);
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => KaraokePlayerScreen(
@@ -69,30 +101,42 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _addToQueue(SongItem song) {
-    setState(() {
-      _queue.add(song);
-    });
+    setState(() => _queue.add(song));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: const Color(0xFF161B26),
-        content: Text("Added to Queue (#${_queue.length}): ${song.title}"),
+        backgroundColor: const Color(0xFF141926),
+        content: Text("Reserved (#${_queue.length}): ${song.code} - ${song.title}"),
         duration: const Duration(seconds: 1),
       ),
     );
   }
 
+  void _onKeypadPress(String digit) {
+    if (_keypadInput.length < 5) {
+      setState(() => _keypadInput += digit);
+      if (_keypadInput.length == 5) {
+        final found = _songCatalog.firstWhere(
+          (s) => s.code == _keypadInput,
+          orElse: () => SongItem(code: _keypadInput, title: "Unknown Song", artist: "Unknown", genre: "CUSTOM"),
+        );
+        _addToQueue(found);
+        _keypadInput = '';
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final genres = ['ALL', 'OPM', 'ROCK', 'POP', 'ACOUSTIC'];
+    final genres = ['ALL', 'OPM', 'ROCK', 'POP', 'LOCAL'];
 
     return Scaffold(
-      backgroundColor: const Color(0xFF090B10),
+      backgroundColor: const Color(0xFF06080E),
       body: SafeArea(
         child: Column(
           children: [
-            // Top App Bar
+            // Top Modern Videoke Console Bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Container(
@@ -110,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'KARAOKEHUB',
+                        'KARAOKEHUB NEXT',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
@@ -119,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       Text(
-                        'NEXT-GEN PRO EDITION',
+                        'MODERN VIDEOKE CONSOLE',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
@@ -130,7 +174,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   const Spacer(),
-                  // Queue Count Indicator
+                  // Remote Keypad Button
+                  IconButton(
+                    icon: const Icon(Icons.dialpad_rounded, color: Color(0xFF00F2FE)),
+                    tooltip: 'Digital Videoke Keypad',
+                    onPressed: () => _showKeypadModal(context),
+                  ),
+                  // Queue Button
                   Stack(
                     children: [
                       IconButton(
@@ -164,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF131722),
+                  color: const Color(0xFF101420),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.white.withOpacity(0.08)),
                 ),
@@ -173,7 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onChanged: (_) => setState(() {}),
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: 'Search title, artist or 5-digit number...',
+                    hintText: 'Search title, artist or 5-digit song number...',
                     hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
                     prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00F2FE)),
                     suffixIcon: _searchCtrl.text.isNotEmpty
@@ -191,9 +241,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
-            // Genre Chips
+            // Category Chips
             SizedBox(
               height: 38,
               child: ListView.separated(
@@ -211,7 +261,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (val) setState(() => _selectedGenre = g);
                     },
                     selectedColor: const Color(0xFF00F2FE),
-                    backgroundColor: const Color(0xFF131722),
+                    backgroundColor: const Color(0xFF101420),
                     labelStyle: TextStyle(
                       color: isSelected ? Colors.black : Colors.white70,
                       fontWeight: FontWeight.w700,
@@ -229,7 +279,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Song List
+            // Song Catalog
             Expanded(
               child: ListView.builder(
                 itemCount: _filteredSongs.length,
@@ -261,14 +311,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   margin: const EdgeInsets.all(12),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1B2233), Color(0xFF131722)],
-                    ),
+                    color: const Color(0xFF141A28),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
+                    border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.35)),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF00F2FE).withOpacity(0.12),
+                        color: const Color(0xFF00F2FE).withOpacity(0.15),
                         blurRadius: 16,
                         offset: const Offset(0, 4),
                       ),
@@ -297,7 +345,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                             ),
                             Text(
-                              _currentlyPlaying!.artist,
+                              "${_currentlyPlaying!.code} • ${_currentlyPlaying!.artist}",
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
@@ -307,7 +355,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.open_in_full_rounded, color: Color(0xFF00F2FE)),
-                        tooltip: 'Open Full Player',
+                        tooltip: 'Open Full Videoke Stage',
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
@@ -329,10 +377,113 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _showKeypadModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0C101A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setKeypadState) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'ENTER VIDEOKE NUMBER (5 DIGITS)',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.7),
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Code Display
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF141926),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.5)),
+                ),
+                child: Text(
+                  _keypadInput.isEmpty ? "-----" : _keypadInput.padRight(5, '-'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF00F2FE),
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 8,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Numpad 0-9
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (var i = 1; i <= 9; i++)
+                    _buildNumpadBtn('', () {
+                      _onKeypadPress('');
+                      setKeypadState(() {});
+                    }),
+                  _buildNumpadBtn('CLEAR', () {
+                    setState(() => _keypadInput = '');
+                    setKeypadState(() {});
+                  }, isAction: true),
+                  _buildNumpadBtn('0', () {
+                    _onKeypadPress('0');
+                    setKeypadState(() {});
+                  }),
+                  _buildNumpadBtn('DEL', () {
+                    if (_keypadInput.isNotEmpty) {
+                      setState(() => _keypadInput = _keypadInput.substring(0, _keypadInput.length - 1));
+                      setKeypadState(() {});
+                    }
+                  }, isAction: true),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNumpadBtn(String label, VoidCallback onTap, {bool isAction = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 80,
+        height: 52,
+        decoration: BoxDecoration(
+          color: isAction ? const Color(0xFF1B2336) : const Color(0xFF141926),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withOpacity(0.08)),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isAction ? const Color(0xFF9B51E0) : Colors.white,
+            fontSize: isAction ? 14 : 20,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showQueueModal(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF121620),
+      backgroundColor: const Color(0xFF0C101A),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -346,8 +497,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'Song Queue',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    'Song Queue / Reserved Songs',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   TextButton(
                     onPressed: () {
@@ -362,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: _queue.isEmpty
                     ? const Center(
-                        child: Text('No songs in queue yet.', style: TextStyle(color: Colors.white54)),
+                        child: Text('No songs reserved yet.', style: TextStyle(color: Colors.white54)),
                       )
                     : ListView.builder(
                         itemCount: _queue.length,
@@ -374,8 +525,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               radius: 14,
                               child: Text('${idx + 1}', style: const TextStyle(fontSize: 12)),
                             ),
-                            title: Text(song.title),
-                            subtitle: Text(song.artist),
+                            title: Text(song.title, style: const TextStyle(color: Colors.white)),
+                            subtitle: Text("${song.code} • ${song.artist}", style: TextStyle(color: Colors.white.withOpacity(0.6))),
                             trailing: IconButton(
                               icon: const Icon(Icons.close, color: Colors.white38, size: 18),
                               onPressed: () {

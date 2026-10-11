@@ -18,7 +18,7 @@ class KaraokePlayerScreen extends StatefulWidget {
   State<KaraokePlayerScreen> createState() => _KaraokePlayerScreenState();
 }
 
-class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTickerProviderStateMixin {
+class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   final AudioEngineService _audio = AudioEngineService();
   late SongItem _currentSong;
   late List<SongItem> _remainingQueue;
@@ -26,10 +26,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
   bool _isPlaying = true;
   int _currentPitch = 0;
   double _currentTempo = 1.0;
-  int _score = 88;
+  int _score = 92;
 
-  // Simulated synchronized lyric lines
+  // Real videoke classic lyric sequence
   final List<String> _lyrics = [
+    "♪ INTRO ♪",
     "Kamukha mo si Paraluman",
     "Nung tayo ay bata pa",
     "At ang galing-galing mong sumayaw",
@@ -39,6 +40,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
     "Magkahawak ang ating kamay",
     "At walang kamalay-malay",
     "Na ang puso ko'y sa 'yo pala naghihintay",
+    "♪ INSTRUMENTAL INTERLUDE ♪",
   ];
 
   int _activeLyricIndex = 0;
@@ -50,10 +52,12 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
     super.initState();
     _currentSong = widget.song;
     _remainingQueue = List.from(widget.queue);
-    _audio.play();
+    
+    // Play real audio if available
+    _audio.playSong(_currentSong.filePath);
 
-    // Smooth auto-advancing karaoke lyric prompter
-    _lyricTimer = Timer.periodic(const Duration(milliseconds: 3200), (timer) {
+    // Smooth videoke prompter loop
+    _lyricTimer = Timer.periodic(const Duration(milliseconds: 3000), (timer) {
       if (_isPlaying && mounted) {
         setState(() {
           _activeLyricIndex = (_activeLyricIndex + 1) % _lyrics.length;
@@ -61,11 +65,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
       }
     });
 
-    // Dynamic singing score fluctuation simulation
     _scoreTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (_isPlaying && mounted) {
         setState(() {
-          _score = 85 + (_activeLyricIndex * 2) % 15;
+          _score = 88 + (_activeLyricIndex * 3) % 12;
         });
       }
     });
@@ -75,13 +78,12 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
   void dispose() {
     _lyricTimer?.cancel();
     _scoreTimer?.cancel();
+    _audio.stop();
     super.dispose();
   }
 
   void _togglePlayPause() {
-    setState(() {
-      _isPlaying = !_isPlaying;
-    });
+    setState(() => _isPlaying = !_isPlaying);
     if (_isPlaying) {
       _audio.play();
     } else {
@@ -95,97 +97,95 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
         _currentSong = _remainingQueue.removeAt(0);
         _activeLyricIndex = 0;
       });
-      _audio.play();
+      _audio.playSong(_currentSong.filePath);
     } else {
       Navigator.of(context).pop();
     }
   }
 
   void _adjustPitch(int delta) {
-    setState(() {
-      _currentPitch += delta;
-    });
+    setState(() => _currentPitch += delta);
     _audio.setPitch(_currentPitch);
   }
 
   void _adjustTempo(double delta) {
-    setState(() {
-      _currentTempo = (_currentTempo + delta).clamp(0.7, 1.4);
-    });
+    setState(() => _currentTempo = (_currentTempo + delta).clamp(0.7, 1.4));
     _audio.setTempo(_currentTempo);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF07090E),
+      backgroundColor: const Color(0xFF04060A),
       body: Stack(
         children: [
-          // Dynamic Animated Visualizer / Background Stage
+          // 1. High-Tech Cyber Videoke Background Stage
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
                 gradient: RadialGradient(
-                  center: Alignment(0, -0.2),
-                  radius: 1.2,
+                  center: Alignment(0, -0.1),
+                  radius: 1.3,
                   colors: [
-                    Color(0xFF191B2E),
-                    Color(0xFF0A0C14),
-                    Color(0xFF040608),
+                    Color(0xFF141C30),
+                    Color(0xFF070B14),
+                    Color(0xFF020306),
                   ],
                 ),
               ),
             ),
           ),
 
-          // Floating Background Glow Orbs
+          // Glowing Neon Ambient Aura
           Positioned(
-            top: 120,
-            left: 30,
+            top: 80,
+            left: 20,
             child: Container(
-              width: 260,
-              height: 260,
+              width: 280,
+              height: 280,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF00F2FE).withOpacity(0.06),
+                color: const Color(0xFF00F2FE).withOpacity(0.08),
               ),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
-                child: const SizedBox(),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 180,
-            right: 40,
-            child: Container(
-              width: 240,
-              height: 240,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF9B51E0).withOpacity(0.08),
-              ),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
+                filter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
                 child: const SizedBox(),
               ),
             ),
           ),
 
-          // Main Interactive Foreground
+          // 2. Main Videoke Console Overlay
           SafeArea(
             child: Column(
               children: [
-                // Top Header (Back, Song Title/Code, Realtime Score Badge)
+                // Top Videoke Header Bar
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   child: Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
+                      // Song Number Badge & Title
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00F2FE),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _currentSong.code,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,48 +195,39 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
                                 color: Colors.white,
                               ),
                             ),
                             Text(
-                              "${_currentSong.code} • ${_currentSong.artist}",
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF00F2FE),
-                                fontWeight: FontWeight.w600,
+                              _currentSong.artist,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withOpacity(0.5),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      // Real-time Singing Score Display
+                      // Videoke Score Gauge
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF9B51E0), Color(0xFF6B21A8)],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF9B51E0).withOpacity(0.4),
-                              blurRadius: 10,
-                            ),
-                          ],
+                          color: const Color(0xFF131A2A),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF9B51E0), width: 1.5),
                         ),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.star_rounded, color: Colors.amber, size: 18),
-                            const SizedBox(width: 4),
+                            const Icon(Icons.score_rounded, color: Color(0xFF9B51E0), size: 16),
+                            const SizedBox(width: 6),
                             Text(
-                              '$_score',
+                              'SCORE: ',
                               style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 15,
                                 color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
                               ),
                             ),
                           ],
@@ -248,7 +239,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
 
                 const Spacer(flex: 1),
 
-                // Center Stage: Kinetic Apple-Music Style Karaoke Lyrics
+                // 3. Videoke High-Contrast Lyrics Prompter
                 Expanded(
                   flex: 6,
                   child: Padding(
@@ -261,22 +252,22 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
 
                         final isActive = index == _activeLyricIndex;
                         return AnimatedContainer(
-                          duration: const Duration(milliseconds: 350),
+                          duration: const Duration(milliseconds: 300),
                           curve: Curves.easeOutCubic,
-                          margin: EdgeInsets.symmetric(vertical: isActive ? 14 : 8),
+                          margin: EdgeInsets.symmetric(vertical: isActive ? 12 : 6),
                           child: Text(
                             _lyrics[index],
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontSize: isActive ? 24 : 16,
-                              fontWeight: isActive ? FontWeight.w900 : FontWeight.w500,
+                              fontSize: isActive ? 26 : 17,
+                              fontWeight: isActive ? FontWeight.w900 : FontWeight.w600,
                               color: isActive
                                   ? const Color(0xFF00F2FE)
                                   : Colors.white.withOpacity(0.35 - (distance * 0.1)),
                               shadows: isActive
                                   ? [
                                       BoxShadow(
-                                        color: const Color(0xFF00F2FE).withOpacity(0.6),
+                                        color: const Color(0xFF00F2FE).withOpacity(0.8),
                                         blurRadius: 18,
                                       ),
                                     ]
@@ -291,47 +282,47 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
 
                 const Spacer(flex: 1),
 
-                // Floating Frosted Control Deck (Key, Tempo, Next, Play/Pause)
+                // 4. Modern Frosted Videoke Remote Keypad & Controls
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF141824).withOpacity(0.85),
+                    color: const Color(0xFF101624).withOpacity(0.85),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: Colors.white.withOpacity(0.08)),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.4),
+                        color: Colors.black.withOpacity(0.5),
                         blurRadius: 20,
-                        offset: const Offset(0, 10),
+                        offset: const Offset(0, 8),
                       ),
                     ],
                   ),
                   child: Column(
                     children: [
-                      // Pitch & Tempo Adjusters
+                      // Videoke Key & Tempo Controls
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          // Pitch / Key Adjuster
+                          // KEY
                           Row(
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.remove_circle_outline_rounded, color: Colors.white70),
+                                icon: const Icon(Icons.remove_circle_rounded, color: Colors.white70),
                                 onPressed: () => _adjustPitch(-1),
                               ),
                               Text(
                                 "KEY: ${_currentPitch >= 0 ? '+$_currentPitch' : _currentPitch}",
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.add_circle_outline_rounded, color: Colors.white70),
+                                icon: const Icon(Icons.add_circle_rounded, color: Colors.white70),
                                 onPressed: () => _adjustPitch(1),
                               ),
                             ],
                           ),
-                          Container(width: 1, height: 24, color: Colors.white12),
-                          // Tempo Adjuster
+                          Container(width: 1, height: 20, color: Colors.white12),
+                          // TEMPO
                           Row(
                             children: [
                               IconButton(
@@ -339,8 +330,8 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
                                 onPressed: () => _adjustTempo(-0.05),
                               ),
                               Text(
-                                "${(_currentTempo * 100).toInt()}%",
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                "TEMPO ${(_currentTempo * 100).toInt()}%",
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.fast_forward_rounded, color: Colors.white70),
@@ -350,20 +341,20 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      // Main Playback Transport
+                      const SizedBox(height: 8),
+                      // Videoke Transport Deck
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.replay_rounded, color: Colors.white70, size: 28),
+                            icon: const Icon(Icons.replay_circle_filled_rounded, color: Colors.white70, size: 32),
                             tooltip: 'Restart Song',
                             onPressed: () {
                               setState(() => _activeLyricIndex = 0);
                               _audio.play();
                             },
                           ),
-                          // Big Play / Pause CTA
+                          // Primary Play/Pause Orb
                           GestureDetector(
                             onTap: _togglePlayPause,
                             child: Container(
@@ -381,9 +372,8 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> with SingleTi
                               ),
                             ),
                           ),
-                          // Next Song in Queue Button
                           IconButton(
-                            icon: const Icon(Icons.skip_next_rounded, color: Colors.white70, size: 32),
+                            icon: const Icon(Icons.skip_next_rounded, color: Colors.white70, size: 36),
                             tooltip: 'Next Song',
                             onPressed: _nextSong,
                           ),
