@@ -38,13 +38,37 @@ class AudioEngineService {
   }
 
   Future<bool> loadBlobSong({
-    String blobPath = '/sdcard/KaraokeHub/karaokehub-private-020/content/idx/shubblob',
+    String? blobPath,
     required int offset,
     required int length,
   }) async {
+    String resolvedPath = blobPath ?? '';
+    if (resolvedPath.isEmpty) {
+      final candidates = [
+        '/sdcard/Download/idx/shubblob',
+        '/sdcard/Download/shubblob',
+        '/storage/emulated/0/Download/idx/shubblob',
+        '/storage/emulated/0/Download/shubblob',
+        '/sdcard/KaraokeHub/karaokehub-private-020/content/idx/shubblob',
+        '/sdcard/KaraokeHub/idx/shubblob',
+        '/storage/emulated/0/KaraokeHub/karaokehub-private-020/content/idx/shubblob',
+      ];
+      for (final p in candidates) {
+        try {
+          if (File(p).existsSync()) {
+            resolvedPath = p;
+            break;
+          }
+        } catch (_) {}
+      }
+      if (resolvedPath.isEmpty) {
+        resolvedPath = '/sdcard/Download/idx/shubblob';
+      }
+    }
+
     try {
       final res = await _channel.invokeMethod<bool>('loadBlobSong', {
-        'blobPath': blobPath,
+        'blobPath': resolvedPath,
         'offset': offset,
         'length': length,
       });

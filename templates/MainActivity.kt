@@ -79,11 +79,25 @@ class MainActivity: FlutterActivity() {
                         }
                     }
                     "loadBlobSong" -> {
-                        val blobPath = call.argument<String>("blobPath") ?: "/sdcard/KaraokeHub/karaokehub-private-020/content/idx/shubblob"
+                        val passedPath = call.argument<String>("blobPath")
                         val sectorOffset = call.argument<Int>("offset") ?: 0
                         val sectorLength = call.argument<Int>("length") ?: 0
                         try {
-                            val midiFile = extractAndDecryptSlice(blobPath, sectorOffset, sectorLength)
+                            val candidateBlobs = listOfNotNull(
+                                passedPath,
+                                "/sdcard/Download/idx/shubblob",
+                                "/sdcard/Download/shubblob",
+                                "/storage/emulated/0/Download/idx/shubblob",
+                                "/storage/emulated/0/Download/shubblob",
+                                "/sdcard/KaraokeHub/karaokehub-private-020/content/idx/shubblob",
+                                "/sdcard/KaraokeHub/idx/shubblob",
+                                "/storage/emulated/0/KaraokeHub/karaokehub-private-020/content/idx/shubblob",
+                                "/storage/emulated/0/KaraokeHub/idx/shubblob"
+                            )
+                            val resolvedBlobPath = candidateBlobs.firstOrNull { File(it).let { f -> f.exists() && f.length() > 0 } }
+                                ?: passedPath ?: "/sdcard/Download/idx/shubblob"
+
+                            val midiFile = extractAndDecryptSlice(resolvedBlobPath, sectorOffset, sectorLength)
                             if (midiFile != null && midiFile.exists()) {
                                 mediaPlayer?.release()
                                 mediaPlayer = MediaPlayer().apply {

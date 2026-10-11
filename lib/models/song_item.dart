@@ -6,6 +6,7 @@ class SongItem {
   final String? filePath;
   final int? blobOffset;
   final int? blobLength;
+  final String? blobPath;
 
   const SongItem({
     required this.code,
@@ -15,6 +16,7 @@ class SongItem {
     this.filePath,
     this.blobOffset,
     this.blobLength,
+    this.blobPath,
   });
 
   bool get isBlob => blobOffset != null && blobLength != null;
@@ -28,6 +30,7 @@ class SongItem {
       'filePath': filePath,
       'blobOffset': blobOffset,
       'blobLength': blobLength,
+      'blobPath': blobPath,
     };
   }
 
@@ -40,6 +43,7 @@ class SongItem {
       filePath: map['filePath'] as String?,
       blobOffset: map['blobOffset'] as int?,
       blobLength: map['blobLength'] as int?,
+      blobPath: map['blobPath'] as String?,
     );
   }
 }

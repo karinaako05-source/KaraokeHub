@@ -54,6 +54,7 @@ class VideokeFlowManager extends ChangeNotifier {
     bool loaded = false;
     if (song.isBlob) {
       loaded = await _audio.loadBlobSong(
+        blobPath: song.blobPath,
         offset: song.blobOffset!,
         length: song.blobLength!,
       );

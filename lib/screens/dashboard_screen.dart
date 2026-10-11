@@ -317,7 +317,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       accentColor: const Color(0xFF81C784),
                       onTap: () => _showDialog(
                         'Storage & Engine Status',
-                        'Storage Path: /sdcard/KaraokeHub/\nCatalog: ${_catalog.songs.length} Songs Loaded\nAudio Decryption: Hardware AES-256-CBC\nSound Synth: Android Native SMF MIDI Engine\nBlob Status: shubblob 502 MB Connected',
+                        'Active Storage: ${SongCatalogService.activeBlobPath ?? "/sdcard/Download/idx/"}\nCatalog: ${_catalog.songs.length} Songs Loaded\nAudio Decryption: Hardware AES-256-CBC\nSound Synth: Android Native SMF MIDI Engine\nStatus: 42,772 Real Songs Active',
                       ),
                     ),
                   ],

@@ -58,26 +58,76 @@ class SongCatalogService extends ChangeNotifier {
     await scanDeviceStorage();
   }
 
+  static String? activeBlobPath;
+
   Future<void> _tryLoadShubCatalog() async {
     final candidateIdxPaths = [
+      '/sdcard/Download/idx/shubidx',
+      '/sdcard/Download/shubidx',
+      '/storage/emulated/0/Download/idx/shubidx',
+      '/storage/emulated/0/Download/shubidx',
       '/sdcard/KaraokeHub/karaokehub-private-020/content/idx/shubidx',
       '/sdcard/KaraokeHub/idx/shubidx',
       '/sdcard/Download/KaraokeHub/idx/shubidx',
+      '/storage/emulated/0/KaraokeHub/karaokehub-private-020/content/idx/shubidx',
+      '/storage/emulated/0/KaraokeHub/idx/shubidx',
     ];
 
+    File? foundIdxFile;
     for (final path in candidateIdxPaths) {
       try {
         final file = File(path);
-        if (file.existsSync()) {
-          final bytes = await file.readAsBytes();
-          _parseShubIdx(bytes);
+        if (file.existsSync() && file.lengthSync() > 0) {
+          foundIdxFile = file;
           break;
         }
       } catch (_) {}
     }
+
+    // Fallback: search inside /sdcard/Download/ for any idx folder or shubidx
+    if (foundIdxFile == null) {
+      try {
+        final downloadDir = Directory('/sdcard/Download');
+        if (downloadDir.existsSync()) {
+          for (final entity in downloadDir.listSync(recursive: false)) {
+            if (entity is Directory && entity.path.toLowerCase().endsWith('idx')) {
+              final nested = File('${entity.path}/shubidx');
+              if (nested.existsSync()) {
+                foundIdxFile = nested;
+                break;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (foundIdxFile != null) {
+      // Resolve matching shubblob path
+      final candidateBlobPaths = [
+        '${foundIdxFile.parent.path}/shubblob',
+        '/sdcard/Download/idx/shubblob',
+        '/sdcard/Download/shubblob',
+        '/storage/emulated/0/Download/idx/shubblob',
+        '/sdcard/KaraokeHub/karaokehub-private-020/content/idx/shubblob',
+        '/sdcard/KaraokeHub/idx/shubblob',
+      ];
+      for (final blobPath in candidateBlobPaths) {
+        final bf = File(blobPath);
+        if (bf.existsSync() && bf.lengthSync() > 0) {
+          activeBlobPath = blobPath;
+          break;
+        }
+      }
+
+      try {
+        final bytes = await foundIdxFile.readAsBytes();
+        _parseShubIdx(bytes, activeBlobPath);
+      } catch (_) {}
+    }
   }
 
-  void _parseShubIdx(Uint8List bytes) {
+  void _parseShubIdx(Uint8List bytes, [String? blobPath]) {
     if (bytes.length < 56) return;
     final byteData = ByteData.sublistView(bytes);
     final start = byteData.getUint32(52, Endian.little);
@@ -178,6 +228,7 @@ class SongCatalogService extends ChangeNotifier {
           genre: genre,
           blobOffset: item['musicOff'] as int,
           blobLength: item['musicLen'] as int,
+          blobPath: blobPath,
         ),
       );
     }
