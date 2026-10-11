@@ -64,6 +64,24 @@ Java_com_karaokehub_next_SoundFontSynth_nativeInit(JNIEnv* env, jobject, jbyteAr
     return JNI_TRUE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_karaokehub_next_SoundFontSynth_nativeInitFromFile(JNIEnv* env, jobject, jstring filePath, jint sampleRate) {
+    if (g_tsf) { tsf_close(g_tsf); g_tsf = nullptr; }
+    const char* pathStr = env->GetStringUTFChars(filePath, nullptr);
+    LOGI("tsf_load_filename loading from: %s", pathStr);
+    g_tsf = tsf_load_filename(pathStr);
+    env->ReleaseStringUTFChars(filePath, pathStr);
+    if (!g_tsf) {
+        LOGI("tsf_load_filename failed");
+        return JNI_FALSE;
+    }
+    LOGI("tsf_load_filename success! Presets loaded: %d", tsf_get_presetcount(g_tsf));
+    g_sampleRate = sampleRate;
+    tsf_channel_set_bank_preset(g_tsf, 9, 128, 0);
+    tsf_set_output(g_tsf, TSF_STEREO_INTERLEAVED, sampleRate, 0.0f);
+    return JNI_TRUE;
+}
+
 extern "C" JNIEXPORT jdouble JNICALL
 Java_com_karaokehub_next_SoundFontSynth_nativeLoadMidi(JNIEnv* env, jobject, jbyteArray midi) {
     if (g_head) { tml_free(g_head); g_head = nullptr; }

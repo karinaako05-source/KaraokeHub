@@ -79,7 +79,13 @@ class MainActivity: FlutterActivity() {
                 val f = File(p)
                 if (f.exists() && f.length() > 0) {
                     val synth = SoundFontSynth()
-                    val ok = synth.init(f.readBytes())
+                    // 1. Try direct C/C++ file load (avoids reading 100MB into Dalvik heap)
+                    var ok = synth.initFromFile(f.absolutePath)
+                    if (!ok) {
+                        try {
+                            ok = synth.init(f.readBytes())
+                        } catch (_: OutOfMemoryError) {}
+                    }
                     if (ok) {
                         sfSynth = synth
                         soundFontLoadedPath = p
@@ -227,6 +233,9 @@ class MainActivity: FlutterActivity() {
 
                             val midiFile = extractAndDecryptSlice(resolvedBlobPath, sectorOffset, sectorLength)
                             if (midiFile != null && midiFile.exists()) {
+                                if (sfSynth == null || sfSynth?.isReady() != true) {
+                                    initSoundFont()
+                                }
                                 if (sfSynth != null && sfSynth?.isReady() == true) {
                                     mediaPlayer?.release()
                                     mediaPlayer = null

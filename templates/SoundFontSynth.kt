@@ -26,6 +26,7 @@ class SoundFontSynth(private val sampleRate: Int = 44100) {
     }
 
     private external fun nativeInit(sf2: ByteArray, sampleRate: Int): Boolean
+    private external fun nativeInitFromFile(filePath: String, sampleRate: Int): Boolean
     private external fun nativeLoadMidi(midi: ByteArray): Double
     private external fun nativeRender(out: ShortArray, frames: Int): Int
     private external fun nativeSeek(ms: Int)
@@ -46,6 +47,11 @@ class SoundFontSynth(private val sampleRate: Int = 44100) {
 
     fun init(sf2: ByteArray): Boolean {
         inited = tryLoad() && try { nativeInit(sf2, sampleRate) } catch (_: Throwable) { false }
+        return inited
+    }
+
+    fun initFromFile(filePath: String): Boolean {
+        inited = tryLoad() && try { nativeInitFromFile(filePath, sampleRate) } catch (_: Throwable) { false }
         return inited
     }
 

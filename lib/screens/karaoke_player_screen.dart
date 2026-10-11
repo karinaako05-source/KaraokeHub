@@ -342,6 +342,47 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                 ),
                               ),
                             ),
+                          // SoundFont Status Indicator Badge
+                          FutureBuilder<Map<String, dynamic>>(
+                            future: _audio.getSynthStatus(),
+                            builder: (context, snapshot) {
+                              final data = snapshot.data ?? {};
+                              final active = data['soundfontActive'] == true;
+                              return Tooltip(
+                                message: active ? 'SoundFont SF2 Active: ${data['soundfontPath']}' : 'Standard Synth Active',
+                                child: Container(
+                                  margin: const EdgeInsets.only(right: 8),
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: active ? const Color(0xFF0D3220) : const Color(0xFF2B1D1D),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: active ? const Color(0xFF00E676).withOpacity(0.5) : const Color(0xFFFF5252).withOpacity(0.4),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.piano_rounded,
+                                        size: 12,
+                                        color: active ? const Color(0xFF00E676) : const Color(0xFFFF5252),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        active ? 'SF2' : 'MIDI',
+                                        style: TextStyle(
+                                          color: active ? const Color(0xFF00E676) : const Color(0xFFFF5252),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(

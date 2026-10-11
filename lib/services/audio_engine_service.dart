@@ -67,6 +67,16 @@ class AudioEngineService {
     }
   }
 
+  Future<Map<String, dynamic>> getSynthStatus() async {
+    try {
+      final res = await _channel.invokeMethod<Map>('getSynthStatus');
+      if (res != null) {
+        return Map<String, dynamic>.from(res);
+      }
+    } catch (_) {}
+    return {'soundfontActive': false, 'soundfontPath': 'Standard Synth'};
+  }
+
   Future<bool> loadSong(String? path) async {
     if (path == null || path.isEmpty) return false;
     try {
