@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/song_item.dart';
+import '../services/audio_engine_service.dart';
 import '../services/song_catalog_service.dart';
 import '../services/videoke_flow_manager.dart';
 import 'home_screen.dart';
@@ -14,20 +15,43 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingObserver {
   final SongCatalogService _catalog = SongCatalogService();
   final VideokeFlowManager _flow = VideokeFlowManager();
 
   String _currentTime = '';
   Timer? _timer;
+  bool _hasStoragePermission = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _updateTime();
+    _checkPermission();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _updateTime());
     _catalog.addListener(_onStateChanged);
     _flow.addListener(_onStateChanged);
+  }
+
+  Future<void> _checkPermission() async {
+    final hasPerm = await AudioEngineService().checkStoragePermission();
+    if (mounted) {
+      setState(() {
+        _hasStoragePermission = hasPerm;
+      });
+      if (hasPerm && _catalog.songs.length <= 3) {
+        _catalog.reloadCatalog();
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPermission();
+      _catalog.reloadCatalog();
+    }
   }
 
   void _onStateChanged() {
@@ -44,6 +68,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _catalog.removeListener(_onStateChanged);
     _flow.removeListener(_onStateChanged);
@@ -62,6 +87,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Storage Permission Warning Banner
+              if (!_hasStoragePermission || _catalog.songs.length <= 3) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE65100).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFF9800)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.folder_special_rounded, color: Color(0xFFFFB74D), size: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'STORAGE PERMISSION REQUIRED',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'I-allow ang All Files Access para mabasa ang 42,772 kanta sa Download/idx.',
+                              style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF9800),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () async {
+                          await AudioEngineService().requestStoragePermission();
+                        },
+                        child: const Text('ALLOW ACCESS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               // Top System Bar
               Row(
                 children: [

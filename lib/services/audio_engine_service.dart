@@ -19,6 +19,24 @@ class AudioEngineService {
     }
   }
 
+  Future<bool> checkStoragePermission() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('checkStoragePermission');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> requestStoragePermission() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('requestStoragePermission');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> initEngine() async {
     try {
       final res = await _channel.invokeMethod<bool>('initEngine');

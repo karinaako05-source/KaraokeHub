@@ -19,6 +19,11 @@ class SongCatalogService extends ChangeNotifier {
 
   int _nextGeneratedCode = 50001;
 
+  Future<void> reloadCatalog() async {
+    await _loadCatalog();
+    notifyListeners();
+  }
+
   Future<void> _loadCatalog() async {
     _songs.clear();
 
