@@ -33,15 +33,19 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Configure Flutter Android Project
+      - name: Generate Official Android Platform Files
         run: |
-          flutter config --no-analytics
+          # Backup custom files
+          mkdir -p /tmp/backup_app
+          cp -r android/app/build.gradle.kts android/app/src /tmp/backup_app/
+
+          # Generate official Flutter android scaffolding
+          rm -rf android
           flutter create . --platforms=android --org=com.karaokehub.next
 
-      - name: Restore Custom Android Configuration
-        run: |
-          # Ensure custom build.gradle.kts and AndroidManifest are preserved
-          git checkout android/app/build.gradle.kts android/app/src/main/AndroidManifest.xml android/app/src/main/kotlin/com/karaokehub/next/MainActivity.kt
+          # Restore custom build.gradle.kts and src (MainActivity + JNI libs)
+          cp /tmp/backup_app/build.gradle.kts android/app/build.gradle.kts
+          cp -r /tmp/backup_app/src/* android/app/src/
 
       - name: Install Project Dependencies
         run: flutter pub get
