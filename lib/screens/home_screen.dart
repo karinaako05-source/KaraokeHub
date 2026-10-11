@@ -1,9 +1,9 @@
-import 'karaoke_player_screen.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/song_item.dart';
 import '../services/audio_engine_service.dart';
 import '../widgets/song_tile.dart';
+import 'karaoke_player_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -258,71 +258,69 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 },
                 child: Container(
-                margin: const EdgeInsets.all(12),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1B2233), Color(0xFF131722)],
+                  margin: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1B2233), Color(0xFF131722)],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF00F2FE).withOpacity(0.12),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF00F2FE).withOpacity(0.12),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF00F2FE),
-                        shape: BoxShape.circle,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF00F2FE),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.music_note_rounded, color: Colors.black, size: 20),
                       ),
-                      child: const Icon(Icons.music_note_rounded, color: Colors.black, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _currentlyPlaying!.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
-                          Text(
-                            _currentlyPlaying!.artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
-                          ),
-                        ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _currentlyPlaying!.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            Text(
+                              _currentlyPlaying!.artist,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.exposure_minus_1_rounded, color: Colors.white70),
-                      tooltip: 'Key -1',
-                      onPressed: () => _audio.setPitch(-1),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.exposure_plus_1_rounded, color: Colors.white70),
-                      tooltip: 'Key +1',
-                      onPressed: () => _audio.setPitch(1),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.pause_circle_filled_rounded, color: Color(0xFF00F2FE), size: 36),
-                      onPressed: () {
-                        _audio.pause();
-                        setState(() => _currentlyPlaying = null);
-                      },
-                    ),
-                  ],
+                      IconButton(
+                        icon: const Icon(Icons.open_in_full_rounded, color: Color(0xFF00F2FE)),
+                        tooltip: 'Open Full Player',
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => KaraokePlayerScreen(
+                                song: _currentlyPlaying!,
+                                queue: _queue,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
           ],
