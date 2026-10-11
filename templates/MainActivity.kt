@@ -31,6 +31,7 @@ class MainActivity: FlutterActivity() {
     private var methodChannel: MethodChannel? = null
     private var currentPitch: Float = 1.0f
     private var currentTempo: Float = 1.0f
+    private var lastExtractedLyrics: List<Map<String, Any>> = emptyList()
 
     // 256-bit AES Key and 128-bit IV for MKMD slices from shubblob
     private val AES_KEY = byteArrayOf(
@@ -146,9 +147,18 @@ class MainActivity: FlutterActivity() {
                                     applyPlaybackParams()
                                     setOnCompletionListener {
                                         methodChannel?.invokeMethod("onSongEnded", null)
+                                        if (path.endsWith(".mid", true) || path.endsWith(".kar", true)) {
+                                            try {
+                                                val f = File(path)
+                                                if (f.exists()) {
+                                                    lastExtractedLyrics = parseMidiLyrics(f.readBytes())
+                                                }
+                                            } catch (_: Exception) {}
+                                        }
                                     }
                                 }
                             }
+                            methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
                             result.success(true)
                         } catch (e: Exception) {
                             result.success(false)
@@ -184,6 +194,7 @@ class MainActivity: FlutterActivity() {
                                         methodChannel?.invokeMethod("onSongEnded", null)
                                     }
                                 }
+                                methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
                                 result.success(true)
                             } else {
                                 result.success(false)
@@ -275,6 +286,9 @@ class MainActivity: FlutterActivity() {
                             result.success(false)
                         }
                     }
+                    "getLyrics" -> {
+                        result.success(lastExtractedLyrics)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -332,15 +346,180 @@ class MainActivity: FlutterActivity() {
             inflater.end()
 
             val midiBytes = bos.toByteArray()
+            try {
+                lastExtractedLyrics = parseMidiLyrics(midiBytes)
+            } catch (_: Exception) {
+                lastExtractedLyrics = emptyList()
+            }
             val outFile = File(cacheDir, "current_song.mid")
             outFile.writeBytes(midiBytes)
             return outFile
         } else {
             // Already standard MIDI or audio
+            try {
+                lastExtractedLyrics = parseMidiLyrics(chunk)
+            } catch (_: Exception) {
+                lastExtractedLyrics = emptyList()
+            }
             val outFile = File(cacheDir, "current_song.mid")
             outFile.writeBytes(chunk)
             return outFile
         }
+    }
+
+    private fun parseMidiLyrics(midi: ByteArray): List<Map<String, Any>> {
+        if (midi.size < 14) return emptyList()
+        if (midi[0] != 'M'.code.toByte() || midi[1] != 'T'.code.toByte() ||
+            midi[2] != 'h'.code.toByte() || midi[3] != 'd'.code.toByte()) {
+            return emptyList()
+        }
+
+        val numTracks = ((midi[10].toInt() and 0xff) shl 8) or (midi[11].toInt() and 0xff)
+        val rawDivision = ((midi[12].toInt() and 0xff) shl 8) or (midi[13].toInt() and 0xff)
+        val ticksPerBeat = if ((rawDivision and 0x8000) == 0) rawDivision else 480
+
+        class TempoPoint(val tick: Long, val usPerBeat: Long)
+        class RawEvent(val tick: Long, val type: Int, val text: String)
+
+        val tempoList = mutableListOf<TempoPoint>()
+        tempoList.add(TempoPoint(0L, 500000L))
+        val rawEvents = mutableListOf<RawEvent>()
+
+        var idx = 14
+        for (t in 0 until numTracks) {
+            if (idx + 8 > midi.size) break
+            val isTrk = (midi[idx] == 'M'.code.toByte() && midi[idx+1] == 'T'.code.toByte() &&
+                         midi[idx+2] == 'r'.code.toByte() && midi[idx+3] == 'k'.code.toByte())
+            val trkLen = ((midi[idx+4].toInt() and 0xff) shl 24) or
+                         ((midi[idx+5].toInt() and 0xff) shl 16) or
+                         ((midi[idx+6].toInt() and 0xff) shl 8) or
+                         (midi[idx+7].toInt() and 0xff)
+            idx += 8
+            val trkEnd = (idx + trkLen).coerceAtMost(midi.size)
+            if (!isTrk) {
+                idx = trkEnd
+                continue
+            }
+
+            var tPos = idx
+            var curTick = 0L
+            var lastStatus = 0
+
+            while (tPos < trkEnd) {
+                // Read varint delta
+                var delta = 0L
+                while (tPos < trkEnd) {
+                    val b = midi[tPos++].toInt() and 0xff
+                    delta = (delta shl 7) or (b and 0x7f).toLong()
+                    if ((b and 0x80) == 0) break
+                }
+                curTick += delta
+                if (tPos >= trkEnd) break
+
+                var status = midi[tPos].toInt() and 0xff
+                if ((status and 0x80) != 0) {
+                    tPos++
+                    lastStatus = status
+                } else {
+                    status = lastStatus
+                }
+
+                if (status == 0xFF) { // Meta event
+                    if (tPos >= trkEnd) break
+                    val metaType = midi[tPos++].toInt() and 0xff
+                    var metaLen = 0
+                    while (tPos < trkEnd) {
+                        val b = midi[tPos++].toInt() and 0xff
+                        metaLen = (metaLen shl 7) or (b and 0x7f)
+                        if ((b and 0x80) == 0) break
+                    }
+                    val endMeta = (tPos + metaLen).coerceAtMost(trkEnd)
+                    val len = endMeta - tPos
+
+                    if (metaType == 0x51 && len >= 3) { // Set Tempo
+                        val us = ((midi[tPos].toLong() and 0xff) shl 16) or
+                                 ((midi[tPos+1].toLong() and 0xff) shl 8) or
+                                 (midi[tPos+2].toLong() and 0xff)
+                        tempoList.add(TempoPoint(curTick, us))
+                    } else if (metaType == 0x01 || metaType == 0x05) { // Text or Lyric
+                        try {
+                            val str = String(midi, tPos, len, Charsets.ISO_8859_1)
+                            rawEvents.add(RawEvent(curTick, metaType, str))
+                        } catch (_: Exception) {}
+                    }
+                    tPos = endMeta
+                } else if ((status and 0xF0) in listOf(0x80, 0x90, 0xA0, 0xB0, 0xE0)) {
+                    tPos = (tPos + 2).coerceAtMost(trkEnd)
+                } else if ((status and 0xF0) in listOf(0xC0, 0xD0)) {
+                    tPos = (tPos + 1).coerceAtMost(trkEnd)
+                } else if (status == 0xF0 || status == 0xF7) { // Sysex
+                    var sysLen = 0
+                    while (tPos < trkEnd) {
+                        val b = midi[tPos++].toInt() and 0xff
+                        sysLen = (sysLen shl 7) or (b and 0x7f)
+                        if ((b and 0x80) == 0) break
+                    }
+                    tPos = (tPos + sysLen).coerceAtMost(trkEnd)
+                }
+            }
+            idx = trkEnd
+        }
+
+        tempoList.sortBy { it.tick }
+        rawEvents.sortBy { it.tick }
+
+        fun tickToMs(targetTick: Long): Long {
+            var curMs = 0.0
+            var prevTick = 0L
+            var curTempo = 500000L
+            for (tp in tempoList) {
+                if (targetTick <= tp.tick) break
+                val dt = tp.tick - prevTick
+                curMs += (dt * curTempo).toDouble() / (ticksPerBeat * 1000.0)
+                prevTick = tp.tick
+                curTempo = tp.usPerBeat
+            }
+            curMs += ((targetTick - prevTick) * curTempo).toDouble() / (ticksPerBeat * 1000.0)
+            return curMs.toLong()
+        }
+
+        val hasType5 = rawEvents.any { it.type == 0x05 }
+        val eligible = rawEvents.filter { if (hasType5) it.type == 0x05 else it.type == 0x01 }
+
+        val lines = mutableListOf<Map<String, Any>>()
+        val curTokens = mutableListOf<String>()
+        var curStartMs = 0L
+
+        for (ev in eligible) {
+            val tMs = tickToMs(ev.tick)
+            if (curTokens.isEmpty()) curStartMs = tMs
+
+            val clean = ev.text.replace("\r", "\n").replace("/", "\n").replace("\\", "\n")
+            val parts = clean.split("\n")
+            for (i in parts.indices) {
+                if (i > 0) {
+                    val fullText = curTokens.joinToString("").replace("#", "").trim()
+                    if (fullText.isNotEmpty() && !fullText.startsWith("@") && !fullText.startsWith("SJM")) {
+                        lines.add(mapOf("timeMs" to curStartMs, "text" to fullText))
+                    }
+                    curTokens.clear()
+                    curStartMs = tMs
+                }
+                val part = parts[i]
+                if (part.isNotEmpty()) {
+                    curTokens.add(part)
+                }
+            }
+        }
+
+        if (curTokens.isNotEmpty()) {
+            val fullText = curTokens.joinToString("").replace("#", "").trim()
+            if (fullText.isNotEmpty() && !fullText.startsWith("@") && !fullText.startsWith("SJM")) {
+                lines.add(mapOf("timeMs" to curStartMs, "text" to fullText))
+            }
+        }
+
+        return lines
     }
 
     private fun applyPlaybackParams() {

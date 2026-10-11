@@ -27,21 +27,8 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   int _durationMs = 0;
   Timer? _playbackTimer;
 
-  final List<String> _lyrics = [
-    "♪ VIDEOKE STAGE ACTIVE ♪",
-    "Sing along with the melody!",
-    "Kamukha mo si Paraluman nung tayo ay bata pa",
-    "At ang galing-galing mong sumayaw, mapa-Boogie man o Cha-Cha",
-    "Ngunit ang paborito ay ang pagsayaw mo ng El Bimbo",
-    "Habang nakatitig sa iyong mga mata",
-    "Magkahawak ang ating kamay, at walang kamalay-malay",
-    "Na ang puso ko'y sa 'yo pala naghihintay",
-    "♪ INTERLUDE / SOLO ♪",
-    "La la la la, la la la, la la la...",
-  ];
-
-  int _activeLyricIndex = 0;
-  Timer? _lyricTimer;
+  List<Map<String, dynamic>> _timedLyrics = [];
+  int _activeLyricIndex = -1;
 
   @override
   void initState() {
@@ -53,21 +40,44 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       _flow.playSong(widget.song!);
     }
 
-    _lyricTimer = Timer.periodic(const Duration(milliseconds: 3500), (timer) {
-      if (_flow.isPlaying && mounted) {
+    _audio.onLyricsLoaded = (newLyrics) {
+      if (mounted) {
         setState(() {
-          _activeLyricIndex = (_activeLyricIndex + 1) % _lyrics.length;
+          _timedLyrics = newLyrics;
+          _activeLyricIndex = -1;
+        });
+      }
+    };
+
+    _audio.getLyrics().then((lyrics) {
+      if (mounted && lyrics.isNotEmpty) {
+        setState(() {
+          _timedLyrics = lyrics;
         });
       }
     });
 
-    _playbackTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 200), (_) async {
       if (mounted && _flow.isPlaying) {
         final pos = await _audio.getPosition();
         final dur = await _audio.getDuration();
+
+        int activeIdx = -1;
+        if (_timedLyrics.isNotEmpty) {
+          for (int i = 0; i < _timedLyrics.length; i++) {
+            final tMs = _timedLyrics[i]['timeMs'] as int? ?? 0;
+            if (pos >= tMs) {
+              activeIdx = i;
+            } else {
+              break;
+            }
+          }
+        }
+
         setState(() {
           _positionMs = pos;
           _durationMs = dur;
+          _activeLyricIndex = activeIdx;
         });
       }
     });
@@ -80,7 +90,6 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   @override
   void dispose() {
     _flow.removeListener(_onFlowChanged);
-    _lyricTimer?.cancel();
     _playbackTimer?.cancel();
     super.dispose();
   }
@@ -229,64 +238,86 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 const Spacer(),
 
                 // Live Kinetic Lyric Prompter
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Column(
-                    children: [
-                      // Upcoming lyric
-                      Text(
-                        _lyrics[(_activeLyricIndex + _lyrics.length - 1) % _lyrics.length],
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.25),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
+                Builder(
+                  builder: (context) {
+                    String prevText = "";
+                    String curText = "";
+                    String nextText = "";
 
-                      // Active Sing-Along Kinetic Highlight
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: Container(
-                          key: ValueKey(_activeLyricIndex),
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFF00F2FE).withOpacity(0.15),
-                                const Color(0xFF9B51E0).withOpacity(0.15),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
-                          ),
-                          child: Text(
-                            _lyrics[_activeLyricIndex],
+                    if (_timedLyrics.isEmpty) {
+                      prevText = "♪ VIDEOKE STAGE ACTIVE ♪";
+                      curText = current.title;
+                      nextText = "♪ ${current.artist} • Sing along with the melody ♪";
+                    } else if (_activeLyricIndex < 0) {
+                      prevText = "♪ INTRO ♪";
+                      curText = _timedLyrics.first['text'] as String? ?? "";
+                      nextText = _timedLyrics.length > 1 ? (_timedLyrics[1]['text'] as String? ?? "") : "";
+                    } else {
+                      prevText = _activeLyricIndex > 0 ? (_timedLyrics[_activeLyricIndex - 1]['text'] as String? ?? "") : "";
+                      curText = _timedLyrics[_activeLyricIndex]['text'] as String? ?? "";
+                      nextText = _activeLyricIndex + 1 < _timedLyrics.length ? (_timedLyrics[_activeLyricIndex + 1]['text'] as String? ?? "") : "♪ OUTRO ♪";
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28),
+                      child: Column(
+                        children: [
+                          // Previous lyric
+                          Text(
+                            prevText,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF00F2FE),
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              height: 1.3,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.25),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                        ),
-                      ),
+                          const SizedBox(height: 18),
 
-                      const SizedBox(height: 18),
+                          // Active Sing-Along Kinetic Highlight
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: Container(
+                              key: ValueKey('$_activeLyricIndex-$curText'),
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    const Color(0xFF00F2FE).withOpacity(0.15),
+                                    const Color(0xFF9B51E0).withOpacity(0.15),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
+                              ),
+                              child: Text(
+                                curText,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFF00F2FE),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ),
 
-                      // Next lyric
-                      Text(
-                        _lyrics[(_activeLyricIndex + 1) % _lyrics.length],
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.35),
-                          fontSize: 15,
-                        ),
+                          const SizedBox(height: 18),
+
+                          // Next lyric
+                          Text(
+                            nextText,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.35),
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
 
                 const Spacer(),

@@ -12,11 +12,32 @@ class AudioEngineService {
   static const MethodChannel _channel = MethodChannel('com.karaokehub.next/audio_engine');
 
   VoidCallback? onSongEnded;
+  void Function(List<Map<String, dynamic>>)? onLyricsLoaded;
+
+  List<Map<String, dynamic>> _currentLyrics = [];
+  List<Map<String, dynamic>> get currentLyrics => List.unmodifiable(_currentLyrics);
 
   Future<void> _handleMethodCall(MethodCall call) async {
     if (call.method == 'onSongEnded') {
       onSongEnded?.call();
+    } else if (call.method == 'onLyricsLoaded') {
+      final raw = call.arguments;
+      if (raw is List) {
+        _currentLyrics = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        onLyricsLoaded?.call(_currentLyrics);
+      }
     }
+  }
+
+  Future<List<Map<String, dynamic>>> getLyrics() async {
+    try {
+      final res = await _channel.invokeMethod<List>('getLyrics');
+      if (res != null) {
+        _currentLyrics = res.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        return _currentLyrics;
+      }
+    } catch (_) {}
+    return _currentLyrics;
   }
 
   Future<bool> checkStoragePermission() async {
