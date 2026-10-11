@@ -49,11 +49,14 @@ jobs:
             sed -i 's/namespace = ".*"/namespace = "com.karaokehub.next"/' android/app/build.gradle.kts
           fi
 
-          # 2. Copy clean MainActivity into the target package location
-          mkdir -p android/app/src/main/kotlin/com/karaokehub/next
-          mkdir -p android/app/src/main/kotlin/com/karaokehub/karaokehub_next
-          cp templates/MainActivity.kt android/app/src/main/kotlin/com/karaokehub/next/MainActivity.kt
-          cp templates/MainActivity.kt android/app/src/main/kotlin/com/karaokehub/karaokehub_next/MainActivity.kt
+          # 2. Overwrite the auto-generated MainActivity in its exact generated location
+          TARGET_FILE=$(find android/app/src/main/kotlin -name "MainActivity.kt" | head -n 1)
+          if [ -n "$TARGET_FILE" ]; then
+            cp templates/MainActivity.kt "$TARGET_FILE"
+          else
+            mkdir -p android/app/src/main/kotlin/com/karaokehub/karaokehub_next
+            cp templates/MainActivity.kt android/app/src/main/kotlin/com/karaokehub/karaokehub_next/MainActivity.kt
+          fi
 
           # 3. Copy native JNI libraries
           mkdir -p android/app/src/main/jniLibs
