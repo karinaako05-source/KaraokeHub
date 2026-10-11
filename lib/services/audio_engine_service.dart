@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
 
 class AudioEngineService {
@@ -5,68 +6,70 @@ class AudioEngineService {
   factory AudioEngineService() => _instance;
   AudioEngineService._internal();
 
-  static const MethodChannel _channel = MethodChannel('com.karaokehub.next/audio_engine');
+  final AudioPlayer _player = AudioPlayer();
+  static const MethodChannel _nativeChannel = MethodChannel('com.karaokehub.next/audio_engine');
 
-  Future<bool> initEngine() async {
+  Future<void> initEngine() async {
     try {
-      final res = await _channel.invokeMethod<bool>('initEngine');
-      return res ?? false;
-    } catch (_) {
-      return false;
-    }
+      await _nativeChannel.invokeMethod('initEngine');
+    } catch (_) {}
   }
 
-  Future<bool> loadSong(String path) async {
+  Future<void> playSong(String? filePath) async {
     try {
-      final res = await _channel.invokeMethod<bool>('loadSong', {'path': path});
-      return res ?? false;
-    } catch (_) {
-      return false;
-    }
+      if (filePath != null && filePath.isNotEmpty) {
+        await _player.stop();
+        await _player.play(DeviceFileSource(filePath));
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback: trigger native BASS stream
+    try {
+      await _nativeChannel.invokeMethod('play');
+    } catch (_) {}
   }
 
-  Future<bool> play() async {
+  Future<void> play() async {
     try {
-      final res = await _channel.invokeMethod<bool>('play');
-      return res ?? false;
-    } catch (_) {
-      return false;
-    }
+      await _player.resume();
+    } catch (_) {}
+    try {
+      await _nativeChannel.invokeMethod('play');
+    } catch (_) {}
   }
 
-  Future<bool> pause() async {
+  Future<void> pause() async {
     try {
-      final res = await _channel.invokeMethod<bool>('pause');
-      return res ?? false;
-    } catch (_) {
-      return false;
-    }
+      await _player.pause();
+    } catch (_) {}
+    try {
+      await _nativeChannel.invokeMethod('pause');
+    } catch (_) {}
   }
 
-  Future<bool> stop() async {
+  Future<void> stop() async {
     try {
-      final res = await _channel.invokeMethod<bool>('stop');
-      return res ?? false;
-    } catch (_) {
-      return false;
-    }
+      await _player.stop();
+    } catch (_) {}
+    try {
+      await _nativeChannel.invokeMethod('stop');
+    } catch (_) {}
   }
 
-  Future<bool> setPitch(int semitones) async {
+  Future<void> setPitch(int semitones) async {
     try {
-      final res = await _channel.invokeMethod<bool>('setPitch', {'semitones': semitones});
-      return res ?? false;
-    } catch (_) {
-      return false;
-    }
+      // Audio pitch adjustment
+      final rate = 1.0 + (semitones * 0.05);
+      await _player.setPlaybackRate(rate.clamp(0.5, 2.0));
+      await _nativeChannel.invokeMethod('setPitch', {'semitones': semitones});
+    } catch (_) {}
   }
 
-  Future<bool> setTempo(double rate) async {
+  Future<void> setTempo(double rate) async {
     try {
-      final res = await _channel.invokeMethod<bool>('setTempo', {'rate': rate});
-      return res ?? false;
-    } catch (_) {
-      return false;
-    }
+      await _player.setPlaybackRate(rate.clamp(0.5, 2.0));
+      await _nativeChannel.invokeMethod('setTempo', {'rate': rate});
+    } catch (_) {}
   }
 }
