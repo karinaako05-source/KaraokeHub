@@ -184,9 +184,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       title: 'RANKINGS',
                       subtitle: 'Top Scores & Hall of Fame',
                       accentColor: const Color(0xFFFFB74D),
-                      onTap: () => _showDialog('Top Rankings', '1. Alex - 99 pts (Bakit Ba Ikaw)
-2. Chris - 98 pts (214)
-3. Maria - 97 pts (Torete)'),
+                      onTap: () => _showDialog('Top Rankings', '1. Alex - 99 pts (Bakit Ba Ikaw)\n2. Chris - 98 pts (214)\n3. Maria - 97 pts (Torete)'),
                     ),
 
                     // 5. Artist Search
@@ -208,9 +206,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       title: 'STORAGE',
                       subtitle: 'Soundfonts & SD Scanner',
                       accentColor: const Color(0xFF81C784),
-                      onTap: () => _showDialog('Storage Diagnostics', 'Storage Path: /sdcard/Download
-Database: SQLite Active
-SoundFont: BASSMIDI Loaded'),
+                      onTap: () => _showDialog('Storage Diagnostics', 'Storage Path: /sdcard/Download\nDatabase: SQLite Active\nSoundFont: BASSMIDI Loaded'),
                     ),
                   ],
                 ),
