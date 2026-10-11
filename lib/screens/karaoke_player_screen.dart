@@ -94,6 +94,13 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
 
   void _initBgv() {
     final candidateDirs = [
+      '/sdcard/Download/KaraokeHub/content/bgv',
+      '/sdcard/Download/karaokehub/content/bgv',
+      '/sdcard/Download/KaraokeHub/content/bgv/Nature',
+      '/sdcard/Download/KaraokeHub/content/bgv/Motion',
+      '/sdcard/Download/KaraokeHub/content/bgv/3D',
+      '/storage/emulated/0/Download/KaraokeHub/content/bgv',
+      '/storage/emulated/0/Download/karaokehub/content/bgv',
       '/sdcard/Download/bgv',
       '/sdcard/Download/bvg',
       '/storage/emulated/0/Download/bgv',
@@ -109,7 +116,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       try {
         final dir = Directory(d);
         if (dir.existsSync()) {
-          final files = dir.listSync().whereType<File>().where((f) {
+          final files = dir.listSync(recursive: true).whereType<File>().where((f) {
             final lower = f.path.toLowerCase();
             return lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi');
           }).toList();

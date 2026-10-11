@@ -85,6 +85,10 @@ class AudioEngineService {
     String resolvedPath = blobPath ?? '';
     if (resolvedPath.isEmpty) {
       final candidates = [
+        '/sdcard/Download/KaraokeHub/content/idx/shubblob',
+        '/sdcard/Download/karaokehub/content/idx/shubblob',
+        '/storage/emulated/0/Download/KaraokeHub/content/idx/shubblob',
+        '/storage/emulated/0/Download/karaokehub/content/idx/shubblob',
         '/sdcard/Download/idx/shubblob',
         '/sdcard/Download/shubblob',
         '/storage/emulated/0/Download/idx/shubblob',

@@ -67,6 +67,10 @@ class SongCatalogService extends ChangeNotifier {
 
   Future<void> _tryLoadShubCatalog() async {
     final candidateIdxPaths = [
+      '/sdcard/Download/KaraokeHub/content/idx/shubidx',
+      '/sdcard/Download/karaokehub/content/idx/shubidx',
+      '/storage/emulated/0/Download/KaraokeHub/content/idx/shubidx',
+      '/storage/emulated/0/Download/karaokehub/content/idx/shubidx',
       '/sdcard/Download/idx/shubidx',
       '/sdcard/Download/shubidx',
       '/storage/emulated/0/Download/idx/shubidx',

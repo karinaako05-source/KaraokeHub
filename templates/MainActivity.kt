@@ -63,6 +63,11 @@ class MainActivity: FlutterActivity() {
     private fun initSoundFont() {
         if (sfSynth != null && sfSynth?.isReady() == true) return
         val candidateSf2 = listOf(
+            "/sdcard/Download/KaraokeHub/content/sound/soundfont.sf2",
+            "/sdcard/Download/KaraokeHub/content/sound/TBOSf.sf2",
+            "/sdcard/Download/KaraokeHub/content/sound/Dream_Sam2634_V_0.2.1.6.sf2",
+            "/sdcard/Download/karaokehub/content/sound/soundfont.sf2",
+            "/storage/emulated/0/Download/KaraokeHub/content/sound/soundfont.sf2",
             "/sdcard/Download/soundfont.sf2",
             "/sdcard/Download/idx/soundfont.sf2",
             "/sdcard/KaraokeHub/soundfont.sf2",
@@ -205,6 +210,9 @@ class MainActivity: FlutterActivity() {
                         try {
                             val candidateBlobs = listOfNotNull(
                                 passedPath,
+                                "/sdcard/Download/KaraokeHub/content/idx/shubblob",
+                                "/sdcard/Download/karaokehub/content/idx/shubblob",
+                                "/storage/emulated/0/Download/KaraokeHub/content/idx/shubblob",
                                 "/sdcard/Download/idx/shubblob",
                                 "/sdcard/Download/shubblob",
                                 "/storage/emulated/0/Download/idx/shubblob",
