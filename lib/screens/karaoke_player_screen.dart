@@ -7,6 +7,7 @@ import '../models/song_item.dart';
 import '../services/audio_engine_service.dart';
 import '../services/videoke_flow_manager.dart';
 import '../widgets/videoke_lyric_widget.dart';
+import '../widgets/videoke_countdown_widget.dart';
 
 class KaraokePlayerScreen extends StatefulWidget {
   final SongItem? song;
@@ -447,6 +448,49 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                     String curText = "";
                     String nextText = "";
 
+                    int countdownBeat = 0;
+                    String countdownUpcomingText = "";
+                    String countdownLabel = "GET READY TO SING";
+
+                    if (_timedLyrics.isNotEmpty) {
+                      final firstLyricTimeMs = _timedLyrics.first['timeMs'] as int? ?? 0;
+                      if (_activeLyricIndex < 0) {
+                        if (firstLyricTimeMs >= 3500) {
+                          if (_positionMs >= (firstLyricTimeMs - 4000) && _positionMs < firstLyricTimeMs) {
+                            final remainingMs = firstLyricTimeMs - _positionMs;
+                            countdownBeat = (remainingMs / 1000).ceil().clamp(1, 4);
+                            countdownUpcomingText = _timedLyrics.first['text'] as String? ?? "";
+                            countdownLabel = "GET READY TO SING";
+                          }
+                        } else if (firstLyricTimeMs > 400) {
+                          if (_positionMs < firstLyricTimeMs) {
+                            final step = firstLyricTimeMs / 4.0;
+                            countdownBeat = ((firstLyricTimeMs - _positionMs) / step).ceil().clamp(1, 4);
+                            countdownUpcomingText = _timedLyrics.first['text'] as String? ?? "";
+                            countdownLabel = "GET READY TO SING";
+                          }
+                        }
+                      } else if (_activeLyricIndex >= 0 && _activeLyricIndex + 1 < _timedLyrics.length) {
+                        final nextLyric = _timedLyrics[_activeLyricIndex + 1];
+                        final nextTimeMs = nextLyric['timeMs'] as int? ?? 0;
+                        final curTokens = (_timedLyrics[_activeLyricIndex]['tokens'] as List?) ?? [];
+                        final curEndMs = curTokens.isNotEmpty
+                            ? (curTokens.last['endMs'] as int? ?? _timedLyrics[_activeLyricIndex]['timeMs'] as int? ?? 0)
+                            : (_timedLyrics[_activeLyricIndex]['timeMs'] as int? ?? 0) + 2500;
+                        if (_positionMs >= curEndMs && (nextTimeMs - _positionMs) <= 4000 && (nextTimeMs - _positionMs) > 100) {
+                          final remainingMs = nextTimeMs - _positionMs;
+                          countdownBeat = (remainingMs / 1000).ceil().clamp(1, 4);
+                          countdownUpcomingText = nextLyric['text'] as String? ?? "";
+                          countdownLabel = "NEXT VERSE READY";
+                        }
+                      }
+                    } else if (_positionMs < 4000 && _flow.isPlaying) {
+                      final remainingMs = 4000 - _positionMs;
+                      countdownBeat = (remainingMs / 1000).ceil().clamp(1, 4);
+                      countdownUpcomingText = current.title;
+                      countdownLabel = "GET READY TO SING";
+                    }
+
                     if (_timedLyrics.isEmpty) {
                       prevText = "♪ VIDEOKE STAGE ACTIVE ♪";
                       curText = current.title;
@@ -477,41 +521,48 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                           ),
                           const SizedBox(height: 18),
 
-                          // Active Sing-Along Videoke Letter-by-Letter Kinetic Highlight
+                          // Active Sing-Along Videoke Display or Countdown
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 250),
-                            child: Container(
-                              key: ValueKey('$_activeLyricIndex-$curText'),
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    const Color(0xFF00F2FE).withOpacity(0.12),
-                                    const Color(0xFF9B51E0).withOpacity(0.12),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
-                              ),
-                              child: _activeLyricIndex >= 0 && _activeLyricIndex < _timedLyrics.length
-                                  ? VideokeLyricWidget(
-                                      lyricLine: _timedLyrics[_activeLyricIndex],
-                                      positionMs: _positionMs,
-                                      highlightColor: const Color(0xFF00F2FE),
-                                      fontSize: 22.0,
-                                      outlineWidth: 4.0,
-                                    )
-                                  : Text(
-                                      curText,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Color(0xFF00F2FE),
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        height: 1.3,
+                            child: countdownBeat > 0
+                                ? VideokeCountdownWidget(
+                                    key: ValueKey('countdown-$countdownBeat-$countdownLabel'),
+                                    count: countdownBeat,
+                                    upcomingLyric: countdownUpcomingText,
+                                    label: countdownLabel,
+                                  )
+                                : Container(
+                                    key: ValueKey('$_activeLyricIndex-$curText'),
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          const Color(0xFF00F2FE).withOpacity(0.12),
+                                          const Color(0xFF9B51E0).withOpacity(0.12),
+                                        ],
                                       ),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
                                     ),
-                            ),
+                                    child: _activeLyricIndex >= 0 && _activeLyricIndex < _timedLyrics.length
+                                        ? VideokeLyricWidget(
+                                            lyricLine: _timedLyrics[_activeLyricIndex],
+                                            positionMs: _positionMs,
+                                            highlightColor: const Color(0xFF00F2FE),
+                                            fontSize: 22.0,
+                                            outlineWidth: 4.0,
+                                          )
+                                        : Text(
+                                            curText,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Color(0xFF00F2FE),
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                              height: 1.3,
+                                            ),
+                                          ),
+                                  ),
                           ),
 
                           const SizedBox(height: 18),
@@ -533,35 +584,79 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
 
                 const Spacer(),
 
-                // Playback progress bar
+                // Read-only Videoke Playback Progress Bar (Authentic Videoke: Drag & Forward Disabled)
                 if (_durationMs > 0)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 28),
                     child: Column(
                       children: [
-                        SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                            activeTrackColor: const Color(0xFF00F2FE),
-                            inactiveTrackColor: Colors.white12,
-                            thumbColor: const Color(0xFF00F2FE),
+                        Container(
+                          height: 5,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.white12,
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                          child: Slider(
-                            value: _positionMs.clamp(0, _durationMs).toDouble(),
-                            max: _durationMs.toDouble(),
-                            onChanged: (val) {
-                              _audio.seekTo(val.toInt());
-                            },
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: (_positionMs / _durationMs).clamp(0.0, 1.0),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF00F2FE), Color(0xFF9B51E0)],
+                                ),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0xFF00F2FE),
+                                    blurRadius: 6,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
+                        const SizedBox(height: 8),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(_formatTime(_positionMs), style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                              Text(_formatTime(_durationMs), style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                              Text(
+                                _formatTime(_positionMs),
+                                style: const TextStyle(
+                                  color: Color(0xFF00F2FE),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.06),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'REALTIME VIDEOKE',
+                                  style: TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.0,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _formatTime(_durationMs),
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
                             ],
                           ),
                         ),
