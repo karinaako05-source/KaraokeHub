@@ -88,8 +88,8 @@ class VideokeFlowManager extends ChangeNotifier {
       }
     }
 
-    // If machine is idle, automatically load and play first reserved song
-    if (_currentSong == null || !_isPlaying) {
+    // If machine is totally idle (no song loaded), automatically play first reserved song
+    if (_currentSong == null) {
       await next();
     } else {
       notifyListeners();

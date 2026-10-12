@@ -277,6 +277,9 @@ class MainActivity: FlutterActivity() {
                         try {
                             val candidateBlobs = listOfNotNull(
                                 passedPath,
+                                "/sdcard/SongHub/idx/shubblob",
+                                "/storage/emulated/0/SongHub/idx/shubblob",
+                                "/sdcard/SongHub/content/idx/shubblob",
                                 "/sdcard/Download/KaraokeHub/content/idx/shubblob",
                                 "/sdcard/Download/karaokehub/content/idx/shubblob",
                                 "/storage/emulated/0/Download/KaraokeHub/content/idx/shubblob",

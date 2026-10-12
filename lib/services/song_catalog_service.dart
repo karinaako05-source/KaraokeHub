@@ -67,6 +67,9 @@ class SongCatalogService extends ChangeNotifier {
 
   Future<void> _tryLoadShubCatalog() async {
     final candidateIdxPaths = [
+      '/sdcard/SongHub/idx/shubidx',
+      '/storage/emulated/0/SongHub/idx/shubidx',
+      '/sdcard/SongHub/content/idx/shubidx',
       '/sdcard/Download/KaraokeHub/content/idx/shubidx',
       '/sdcard/Download/karaokehub/content/idx/shubidx',
       '/storage/emulated/0/Download/KaraokeHub/content/idx/shubidx',
@@ -93,28 +96,38 @@ class SongCatalogService extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // Fallback: search inside /sdcard/Download/ for any idx folder or shubidx
+    // Fallback: search inside /sdcard/Download/ and /sdcard/SongHub/ for any idx folder or shubidx
     if (foundIdxFile == null) {
-      try {
-        final downloadDir = Directory('/sdcard/Download');
-        if (downloadDir.existsSync()) {
-          for (final entity in downloadDir.listSync(recursive: false)) {
-            if (entity is Directory && entity.path.toLowerCase().endsWith('idx')) {
-              final nested = File('${entity.path}/shubidx');
-              if (nested.existsSync()) {
-                foundIdxFile = nested;
-                break;
+      final searchDirs = [
+        Directory('/sdcard/SongHub'),
+        Directory('/storage/emulated/0/SongHub'),
+        Directory('/sdcard/Download'),
+        Directory('/storage/emulated/0/Download'),
+      ];
+      for (final searchDir in searchDirs) {
+        try {
+          if (searchDir.existsSync()) {
+            for (final entity in searchDir.listSync(recursive: false)) {
+              if (entity is Directory && entity.path.toLowerCase().endsWith('idx')) {
+                final nested = File('${entity.path}/shubidx');
+                if (nested.existsSync() && nested.lengthSync() > 0) {
+                  foundIdxFile = nested;
+                  break;
+                }
               }
             }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+        if (foundIdxFile != null) break;
+      }
     }
 
     if (foundIdxFile != null) {
       // Resolve matching shubblob path
       final candidateBlobPaths = [
         '${foundIdxFile.parent.path}/shubblob',
+        '/sdcard/SongHub/idx/shubblob',
+        '/storage/emulated/0/SongHub/idx/shubblob',
         '/sdcard/Download/idx/shubblob',
         '/sdcard/Download/shubblob',
         '/storage/emulated/0/Download/idx/shubblob',

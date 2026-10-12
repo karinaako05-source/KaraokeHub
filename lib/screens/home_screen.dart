@@ -247,18 +247,27 @@ class _HomeScreenState extends State<HomeScreen> {
                           );
                         },
                         onReserve: () {
+                          final wasIdle = _flow.currentSong == null;
                           _flow.reserve(song);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Reserved: ${song.title} (${song.code})'),
-                              duration: const Duration(seconds: 2),
-                              action: SnackBarAction(
-                                label: 'PRIORITY',
-                                textColor: const Color(0xFFFF2A6D),
-                                onPressed: () => _flow.reserve(song, priority: true),
+                          if (wasIdle) {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => KaraokePlayerScreen(song: song),
                               ),
-                            ),
-                          );
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Reserved: ${song.title} (${song.code})'),
+                                duration: const Duration(seconds: 2),
+                                action: SnackBarAction(
+                                  label: 'PRIORITY',
+                                  textColor: const Color(0xFFFF2A6D),
+                                  onPressed: () => _flow.reserve(song, priority: true),
+                                ),
+                              ),
+                            );
+                          }
                         },
                       );
                     },
@@ -567,23 +576,31 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).pop();
 
     if (found != null) {
+      final wasIdle = _flow.currentSong == null;
       _flow.reserve(found);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Song Found & Reserved: ${found.title} - ${found.artist} (${found.code})'),
-          backgroundColor: const Color(0xFF00F2FE),
-          action: SnackBarAction(
-            label: 'PLAY NOW',
-            textColor: Colors.black,
-            onPressed: () {
-              _flow.playSong(found);
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => KaraokePlayerScreen(song: found)),
-              );
-            },
+      if (wasIdle) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => KaraokePlayerScreen(song: found)),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✓ Reserved: [${found.code}] ${found.title} - ${found.artist}'),
+            backgroundColor: const Color(0xFF003847),
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: 'PLAY NOW',
+              textColor: const Color(0xFF00F2FE),
+              onPressed: () {
+                _flow.playSong(found);
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => KaraokePlayerScreen(song: found)),
+                );
+              },
+            ),
           ),
-        ),
-      );
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
