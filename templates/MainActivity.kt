@@ -585,6 +585,9 @@ class MainActivity: FlutterActivity() {
         var currentSyllables = mutableListOf<SyllableToken>()
         var lastEventMs = 0L
 
+        val hasType5 = rawEvents.any { it.type == 0x05 }
+        val eligible = rawEvents.filter { if (hasType5) it.type == 0x05 else it.type == 0x01 }
+
         for (ev in eligible) {
             val tMs = tickToMs(ev.tick)
             var str = ev.text.replace("^", "").replace("<", " ")
