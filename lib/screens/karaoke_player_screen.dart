@@ -101,45 +101,42 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   }
 
   void _initBgv() {
-    final candidateDirs = [
-      '/sdcard/Download/KaraokeHub/content/bgv',
-      '/sdcard/Download/karaokehub/content/bgv',
-      '/sdcard/Download/KaraokeHub/content/bgv/Nature',
-      '/sdcard/Download/KaraokeHub/content/bgv/Motion',
-      '/sdcard/Download/KaraokeHub/content/bgv/3D',
-      '/storage/emulated/0/Download/KaraokeHub/content/bgv',
-      '/storage/emulated/0/Download/karaokehub/content/bgv',
-      '/sdcard/Download/bgv',
-      '/sdcard/Download/bvg',
-      '/storage/emulated/0/Download/bgv',
-      '/storage/emulated/0/Download/bvg',
-      '/sdcard/Download/VideoDownloader/Facebook',
-      '/storage/emulated/0/Download/VideoDownloader/Facebook',
-      '/sdcard/Download',
-      '/storage/emulated/0/Download',
-      '/sdcard/KaraokeHub/bgv',
-    ];
+    Future.microtask(() async {
+      final candidateDirs = [
+        '/sdcard/Download/KaraokeHub/content/bgv',
+        '/sdcard/Download/karaokehub/content/bgv',
+        '/sdcard/Download/KaraokeHub/content/bgv/Nature',
+        '/sdcard/Download/KaraokeHub/content/bgv/Motion',
+        '/sdcard/Download/KaraokeHub/content/bgv/3D',
+        '/sdcard/Download/bgv',
+        '/sdcard/Download/bvg',
+        '/sdcard/KaraokeHub/bgv',
+        '/storage/emulated/0/Download/KaraokeHub/content/bgv',
+      ];
 
-    for (final d in candidateDirs) {
-      try {
-        final dir = Directory(d);
-        if (dir.existsSync()) {
-          final files = dir.listSync(recursive: true).whereType<File>().where((f) {
-            final lower = f.path.toLowerCase();
-            return lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi');
-          }).toList();
-          for (final f in files) {
-            if (!_bgvVideos.contains(f.path)) {
-              _bgvVideos.add(f.path);
+      for (final d in candidateDirs) {
+        try {
+          final dir = Directory(d);
+          if (await dir.exists()) {
+            final entities = await dir.list(recursive: false).toList();
+            for (final entity in entities) {
+              if (entity is File) {
+                final lower = entity.path.toLowerCase();
+                if (lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi')) {
+                  if (!_bgvVideos.contains(entity.path)) {
+                    _bgvVideos.add(entity.path);
+                  }
+                }
+              }
             }
           }
-        }
-      } catch (_) {}
-    }
+        } catch (_) {}
+      }
 
-    if (_bgvVideos.isNotEmpty) {
-      _loadBgvVideo(_bgvVideos.first);
-    }
+      if (mounted && _bgvVideos.isNotEmpty && _bgvController == null) {
+        _loadBgvVideo(_bgvVideos.first);
+      }
+    });
   }
 
   void _loadBgvVideo(String path) {

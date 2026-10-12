@@ -28,6 +28,7 @@ static double g_totalMs = 0.0;
 static int g_sampleRate = 44100;
 
 static void applyMessage(tml_message* m) {
+    if (!g_tsf) return;
     switch (m->type) {
         case TML_PROGRAM_CHANGE:
             tsf_channel_set_presetnumber(g_tsf, m->channel, m->program, (m->channel == 9));
@@ -42,7 +43,13 @@ static void applyMessage(tml_message* m) {
             tsf_channel_set_pitchwheel(g_tsf, m->channel, m->pitch_bend);
             break;
         case TML_CONTROL_CHANGE:
-            tsf_channel_midi_control(g_tsf, m->channel, m->control, m->control_value);
+            if (m->control == 7) {
+                // Scale MIDI channel volume down to 72% to prevent saturation and speaker buzzing
+                int scaled = (int)(m->control_value * 0.72f);
+                tsf_channel_midi_control(g_tsf, m->channel, 7, scaled);
+            } else {
+                tsf_channel_midi_control(g_tsf, m->channel, m->control, m->control_value);
+            }
             break;
         default:
             break;
@@ -60,7 +67,8 @@ Java_com_karaokehub_next_SoundFontSynth_nativeInit(JNIEnv* env, jobject, jbyteAr
     g_sampleRate = sampleRate;
     // Channel 10 (index 9) is the drum channel in General MIDI.
     tsf_channel_set_bank_preset(g_tsf, 9, 128, 0);
-    tsf_set_output(g_tsf, TSF_STEREO_INTERLEAVED, sampleRate, 0.0f);
+    // Set output gain to -3.5dB to eliminate digital clipping and buzzing
+    tsf_set_output(g_tsf, TSF_STEREO_INTERLEAVED, sampleRate, -3.5f);
     return JNI_TRUE;
 }
 
@@ -78,7 +86,8 @@ Java_com_karaokehub_next_SoundFontSynth_nativeInitFromFile(JNIEnv* env, jobject,
     LOGI("tsf_load_filename success! Presets loaded: %d", tsf_get_presetcount(g_tsf));
     g_sampleRate = sampleRate;
     tsf_channel_set_bank_preset(g_tsf, 9, 128, 0);
-    tsf_set_output(g_tsf, TSF_STEREO_INTERLEAVED, sampleRate, 0.0f);
+    // Set output gain to -3.5dB to eliminate digital clipping and buzzing
+    tsf_set_output(g_tsf, TSF_STEREO_INTERLEAVED, sampleRate, -3.5f);
     return JNI_TRUE;
 }
 
@@ -100,6 +109,10 @@ Java_com_karaokehub_next_SoundFontSynth_nativeLoadMidi(JNIEnv* env, jobject, jby
 extern "C" JNIEXPORT jint JNICALL
 Java_com_karaokehub_next_SoundFontSynth_nativeRender(JNIEnv* env, jobject, jshortArray out, jint frames) {
     if (!g_tsf) return 0;
+    // If all MIDI events have been dispatched and the song has finished its reverb/release tail, trigger completion
+    if (!g_cursor && g_msPlayed >= g_totalMs + 800.0) {
+        return 0;
+    }
     jshort* outBuf = env->GetShortArrayElements(out, nullptr);
     int rendered = 0;
     while (rendered < frames) {
@@ -113,11 +126,9 @@ Java_com_karaokehub_next_SoundFontSynth_nativeRender(JNIEnv* env, jobject, jshor
         tsf_render_short(g_tsf, outBuf + rendered * 2, block, 0);
         rendered += block;
         g_msPlayed = targetMs;
-        if (!g_cursor && g_msPlayed > g_totalMs + 1500.0) break; // song + short tail done
+        if (!g_cursor && g_msPlayed >= g_totalMs + 800.0) break;
     }
     env->ReleaseShortArrayElements(out, outBuf, 0);
-    // When finished, a subsequent call returns 0 (nothing left to render).
-    if (!g_cursor && g_msPlayed > g_totalMs + 1500.0 && rendered == 0) return 0;
     return rendered;
 }
 

@@ -51,7 +51,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPermission();
-      _catalog.reloadCatalog();
+      if (_catalog.songs.length <= 3) {
+        _catalog.reloadCatalog();
+      }
     }
   }
 
