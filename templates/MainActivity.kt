@@ -588,6 +588,9 @@ class MainActivity: FlutterActivity() {
         val hasType5 = rawEvents.any { it.type == 0x05 }
         val eligible = rawEvents.filter { if (hasType5) it.type == 0x05 else it.type == 0x01 }
 
+        val vocalMarkerRegex = Regex("^(?i)(?:@[mwcfv12]|M:|F:|B:|D:)\\s*")
+        val metaHeaderRegex = Regex("^(?i)@[a-zA-Z0-9_]+")
+
         for (ev in eligible) {
             val tMs = tickToMs(ev.tick)
             var str = ev.text.replace("^", "").replace("<", " ")
@@ -608,9 +611,16 @@ class MainActivity: FlutterActivity() {
                         currentSyllables = mutableListOf()
                     }
                 }
-                val part = parts[i].trim('\u0000')
-                if (part.isNotEmpty() && !part.startsWith("@") && !part.startsWith("SJM")) {
-                    currentSyllables.add(SyllableToken(startMs = tMs, endMs = tMs + 500L, text = part))
+                val rawPart = parts[i].trim('\u0000')
+                if (rawPart.isEmpty()) continue
+
+                if (vocalMarkerRegex.containsMatchIn(rawPart)) {
+                    val cleanPart = rawPart.replace(vocalMarkerRegex, "")
+                    if (cleanPart.isNotEmpty()) {
+                        currentSyllables.add(SyllableToken(startMs = tMs, endMs = tMs + 500L, text = cleanPart))
+                    }
+                } else if (!metaHeaderRegex.containsMatchIn(rawPart) && !rawPart.startsWith("SJM", true)) {
+                    currentSyllables.add(SyllableToken(startMs = tMs, endMs = tMs + 500L, text = rawPart))
                 }
             }
         }
