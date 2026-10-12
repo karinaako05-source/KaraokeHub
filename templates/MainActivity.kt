@@ -614,13 +614,22 @@ class MainActivity: FlutterActivity() {
                 val rawPart = parts[i].trim('\u0000')
                 if (rawPart.isEmpty()) continue
 
+                // Discard pure countdown/beat markers (e.g. '#', '# ', '####') so they don't shift line timings
+                val trimmedPart = rawPart.trim()
+                if (trimmedPart.isNotEmpty() && trimmedPart.all { it == '#' || it.isWhitespace() }) {
+                    continue
+                }
+
                 if (vocalMarkerRegex.containsMatchIn(rawPart)) {
-                    val cleanPart = rawPart.replace(vocalMarkerRegex, "")
+                    val cleanPart = rawPart.replace(vocalMarkerRegex, "").replace("#", "").trim()
                     if (cleanPart.isNotEmpty()) {
                         currentSyllables.add(SyllableToken(startMs = tMs, endMs = tMs + 500L, text = cleanPart))
                     }
                 } else if (!metaHeaderRegex.containsMatchIn(rawPart) && !rawPart.startsWith("SJM", true)) {
-                    currentSyllables.add(SyllableToken(startMs = tMs, endMs = tMs + 500L, text = rawPart))
+                    val cleanPart = rawPart.replace("#", "")
+                    if (cleanPart.isNotEmpty()) {
+                        currentSyllables.add(SyllableToken(startMs = tMs, endMs = tMs + 500L, text = cleanPart))
+                    }
                 }
             }
         }

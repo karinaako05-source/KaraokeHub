@@ -606,16 +606,24 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                             fontSize: 22.0,
                             outlineWidth: 4.0,
                           )
-                        : Text(
-                            curText,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF00F2FE),
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              height: 1.3,
-                            ),
-                          ),
+                        : (_timedLyrics.isNotEmpty
+                            ? VideokeLyricWidget(
+                                lyricLine: _timedLyrics.first,
+                                positionMs: 0,
+                                highlightColor: const Color(0xFF00F2FE),
+                                fontSize: 22.0,
+                                outlineWidth: 4.0,
+                              )
+                            : Text(
+                                curText,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.3,
+                                ),
+                              )),
                   ),
           ),
 
