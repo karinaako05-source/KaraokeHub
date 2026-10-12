@@ -503,7 +503,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _settings.selectedSf2Path = null;
                     _settings.selectedSf2Name = 'Automatic (Best Available)';
                   });
-                  await _settings.saveSettings();
+                  _settings.saveSettings();
                   await AudioEngineService().setSoundFont(null);
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) {
@@ -536,7 +536,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _settings.selectedSf2Path = path;
                         _settings.selectedSf2Name = name;
                       });
-                      await _settings.saveSettings();
+                      _settings.saveSettings();
                       await AudioEngineService().setSoundFont(path);
                       if (ctx.mounted) Navigator.pop(ctx);
                       if (mounted) {

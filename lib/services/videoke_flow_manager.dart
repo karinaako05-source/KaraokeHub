@@ -193,7 +193,7 @@ class VideokeFlowManager extends ChangeNotifier {
       } else {
         settings.selectedSf2Name = 'Automatic (Best Available)';
       }
-      await settings.saveSettings();
+      settings.saveSettings();
       notifyListeners();
     }
     return ok;
