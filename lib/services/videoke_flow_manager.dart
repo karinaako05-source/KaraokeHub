@@ -176,6 +176,10 @@ class VideokeFlowManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  void showScore() {
+    _handleSongEnded();
+  }
+
   void _handleSongEnded() async {
     // Generate authentic videoke score (85 - 100)
     final random = Random();
