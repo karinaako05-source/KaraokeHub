@@ -54,21 +54,50 @@ class MainActivity: FlutterActivity() {
         0xc9.toByte(), 0xf1.toByte(), 0xd3.toByte(), 0xe5.toByte()
     )
 
+    private val playbackWatcherHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val playbackWatcherRunnable = object : Runnable {
+        override fun run() {
+            try {
+                if (isUsingBassEngine && bassEngine?.isPlaying() == true) {
+                    if (bassEngine?.isEnded() == true) {
+                        stopPlaybackWatcher()
+                        runOnUiThread {
+                            methodChannel?.invokeMethod("onSongEnded", null)
+                        }
+                        return
+                    }
+                }
+            } catch (_: Throwable) {}
+            playbackWatcherHandler.postDelayed(this, 300)
+        }
+    }
+
+    private fun startPlaybackWatcher() {
+        stopPlaybackWatcher()
+        playbackWatcherHandler.postDelayed(playbackWatcherRunnable, 300)
+    }
+
+    private fun stopPlaybackWatcher() {
+        playbackWatcherHandler.removeCallbacks(playbackWatcherRunnable)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         promptStoragePermissionIfNeeded()
         initSoundFont()
     }
 
+    override fun onDestroy() {
+        stopPlaybackWatcher()
+        try { bassEngine?.release() } catch (_: Throwable) {}
+        try { mediaPlayer?.release() } catch (_: Throwable) {}
+        try { sfxPlayer?.release() } catch (_: Throwable) {}
+        super.onDestroy()
+    }
+
     private fun loadSoundFont(targetPath: String? = null): Boolean {
         if (bassEngine == null) {
-            bassEngine = BassAudioEngine(this).apply {
-                onSongEnded = {
-                    runOnUiThread {
-                        methodChannel?.invokeMethod("onSongEnded", null)
-                    }
-                }
-            }
+            bassEngine = BassAudioEngine(this)
         }
         val engine = bassEngine ?: return false
 
@@ -82,9 +111,15 @@ class MainActivity: FlutterActivity() {
             "/sdcard/SongHub/sound/soundfont.sf2",
             "/sdcard/SongHub/sound/Yamaha FF8 GM.sf2",
             "/sdcard/SongHub/sound/YAMAHA_PSR400-500.sf2",
+            "/sdcard/SongHub/sound/Live_Party_SoundFont__Techno_.sf2",
+            "/sdcard/SongHub/sound/GeneralUser-GS.sf2",
             "/storage/emulated/0/SongHub/sound/TBOSf.sf2",
             "/storage/emulated/0/SongHub/sound/Dream_Sam2634_V_0.2.1.6.sf2",
             "/storage/emulated/0/SongHub/sound/soundfont.sf2",
+            "/storage/emulated/0/SongHub/sound/Yamaha FF8 GM.sf2",
+            "/storage/emulated/0/SongHub/sound/YAMAHA_PSR400-500.sf2",
+            "/storage/emulated/0/SongHub/sound/Live_Party_SoundFont__Techno_.sf2",
+            "/storage/emulated/0/SongHub/sound/GeneralUser-GS.sf2",
             "/sdcard/Download/KaraokeHub/content/sound/soundfont.sf2",
             "/sdcard/Download/KaraokeHub/content/sound/TBOSf.sf2",
             "/sdcard/Download/KaraokeHub/content/sound/Dream_Sam2634_V_0.2.1.6.sf2",
@@ -331,8 +366,14 @@ class MainActivity: FlutterActivity() {
                     "play" -> {
                         try {
                             if (isUsingBassEngine) {
-                                bassEngine?.play()
-                                result.success(true)
+                                val ok = bassEngine?.play() ?: false
+                                if (ok) {
+                                    startPlaybackWatcher()
+                                    result.success(true)
+                                } else {
+                                    mediaPlayer?.start()
+                                    result.success(true)
+                                }
                             } else {
                                 mediaPlayer?.start()
                                 result.success(true)
@@ -343,6 +384,7 @@ class MainActivity: FlutterActivity() {
                     }
                     "pause" -> {
                         try {
+                            stopPlaybackWatcher()
                             if (isUsingBassEngine) {
                                 bassEngine?.pause()
                                 result.success(true)
@@ -356,6 +398,7 @@ class MainActivity: FlutterActivity() {
                     }
                     "stop" -> {
                         try {
+                            stopPlaybackWatcher()
                             if (isUsingBassEngine) {
                                 bassEngine?.stop()
                                 result.success(true)
