@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import '../models/song_item.dart';
 import '../services/audio_engine_service.dart';
 import '../services/videoke_flow_manager.dart';
+import '../widgets/videoke_lyric_widget.dart';
 
 class KaraokePlayerScreen extends StatefulWidget {
   final SongItem? song;
@@ -66,7 +67,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       }
     });
 
-    _playbackTimer = Timer.periodic(const Duration(milliseconds: 200), (_) async {
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 50), (_) async {
       if (mounted && _flow.isPlaying) {
         final pos = await _audio.getPosition();
         final dur = await _audio.getDuration();
@@ -476,32 +477,40 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                           ),
                           const SizedBox(height: 18),
 
-                          // Active Sing-Along Kinetic Highlight
+                          // Active Sing-Along Videoke Letter-by-Letter Kinetic Highlight
                           AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
+                            duration: const Duration(milliseconds: 250),
                             child: Container(
                               key: ValueKey('$_activeLyricIndex-$curText'),
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
-                                    const Color(0xFF00F2FE).withOpacity(0.15),
-                                    const Color(0xFF9B51E0).withOpacity(0.15),
+                                    const Color(0xFF00F2FE).withOpacity(0.12),
+                                    const Color(0xFF9B51E0).withOpacity(0.12),
                                   ],
                                 ),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
                               ),
-                              child: Text(
-                                curText,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF00F2FE),
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  height: 1.3,
-                                ),
-                              ),
+                              child: _activeLyricIndex >= 0 && _activeLyricIndex < _timedLyrics.length
+                                  ? VideokeLyricWidget(
+                                      lyricLine: _timedLyrics[_activeLyricIndex],
+                                      positionMs: _positionMs,
+                                      highlightColor: const Color(0xFF00F2FE),
+                                      fontSize: 22.0,
+                                      outlineWidth: 4.0,
+                                    )
+                                  : Text(
+                                      curText,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Color(0xFF00F2FE),
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        height: 1.3,
+                                      ),
+                                    ),
                             ),
                           ),
 

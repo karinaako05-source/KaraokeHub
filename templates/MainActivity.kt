@@ -578,43 +578,86 @@ class MainActivity: FlutterActivity() {
             return curMs.toLong()
         }
 
-        val hasType5 = rawEvents.any { it.type == 0x05 }
-        val eligible = rawEvents.filter { if (hasType5) it.type == 0x05 else it.type == 0x01 }
+        data class SyllableToken(val startMs: Long, val endMs: Long, val text: String)
+        data class PendingLine(val tokens: MutableList<SyllableToken>)
 
-        val lines = mutableListOf<Map<String, Any>>()
-        val curTokens = mutableListOf<String>()
-        var curStartMs = 0L
+        val parsedLines = mutableListOf<PendingLine>()
+        var currentSyllables = mutableListOf<SyllableToken>()
+        var lastEventMs = 0L
 
         for (ev in eligible) {
             val tMs = tickToMs(ev.tick)
-            if (curTokens.isEmpty()) curStartMs = tMs
+            var str = ev.text.replace("^", "").replace("<", " ")
 
-            val clean = ev.text.replace("\r", "\n").replace("/", "\n").replace("\\", "\n")
-            val parts = clean.split("\n")
+            if (currentSyllables.isNotEmpty() && (tMs - lastEventMs) > 2800L) {
+                parsedLines.add(PendingLine(currentSyllables))
+                currentSyllables = mutableListOf()
+            }
+            lastEventMs = tMs
+
+            val normalized = str.replace("\r", "\n").replace("/", "\n").replace("\\", "\n")
+            val parts = normalized.split("\n")
+
             for (i in parts.indices) {
                 if (i > 0) {
-                    val fullText = curTokens.joinToString("").replace("#", "").trim()
-                    if (fullText.isNotEmpty() && !fullText.startsWith("@") && !fullText.startsWith("SJM")) {
-                        lines.add(mapOf("timeMs" to curStartMs, "text" to fullText))
+                    if (currentSyllables.isNotEmpty()) {
+                        parsedLines.add(PendingLine(currentSyllables))
+                        currentSyllables = mutableListOf()
                     }
-                    curTokens.clear()
-                    curStartMs = tMs
                 }
-                val part = parts[i]
-                if (part.isNotEmpty()) {
-                    curTokens.add(part)
+                val part = parts[i].trim('\u0000')
+                if (part.isNotEmpty() && !part.startsWith("@") && !part.startsWith("SJM")) {
+                    currentSyllables.add(SyllableToken(startMs = tMs, endMs = tMs + 500L, text = part))
                 }
             }
         }
+        if (currentSyllables.isNotEmpty()) {
+            parsedLines.add(PendingLine(currentSyllables))
+        }
 
-        if (curTokens.isNotEmpty()) {
-            val fullText = curTokens.joinToString("").replace("#", "").trim()
-            if (fullText.isNotEmpty() && !fullText.startsWith("@") && !fullText.startsWith("SJM")) {
-                lines.add(mapOf("timeMs" to curStartMs, "text" to fullText))
+        val resultLines = mutableListOf<Map<String, Any>>()
+        for (lineIdx in parsedLines.indices) {
+            val pending = parsedLines[lineIdx]
+            val resolvedTokens = mutableListOf<Map<String, Any>>()
+            val count = pending.tokens.size
+
+            for (tokenIdx in 0 until count) {
+                val token = pending.tokens[tokenIdx]
+                val nextStartMs = if (tokenIdx + 1 < count) {
+                    pending.tokens[tokenIdx + 1].startMs
+                } else {
+                    parsedLines.getOrNull(lineIdx + 1)?.tokens?.firstOrNull()?.startMs
+                }
+
+                val endMs = if (nextStartMs != null && nextStartMs > token.startMs) {
+                    Math.min(nextStartMs, token.startMs + 3000L)
+                } else {
+                    token.startMs + 700L
+                }
+
+                resolvedTokens.add(mapOf(
+                    "startMs" to token.startMs,
+                    "endMs" to endMs,
+                    "text" to token.text
+                ))
+            }
+
+            if (resolvedTokens.isEmpty()) continue
+
+            val fullText = resolvedTokens.joinToString("") { it["text"] as String }.replace("#", "").trim()
+            if (fullText.isNotEmpty()) {
+                val lineStartMs = resolvedTokens.first()["startMs"] as Long
+                val lineEndMs = (resolvedTokens.last()["endMs"] as Long) + 300L
+                resultLines.add(mapOf(
+                    "timeMs" to lineStartMs,
+                    "endMs" to lineEndMs,
+                    "text" to fullText,
+                    "tokens" to resolvedTokens
+                ))
             }
         }
 
-        return lines
+        return resultLines
     }
 
     private fun applyPlaybackParams() {
