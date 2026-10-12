@@ -430,28 +430,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showSoundFontPicker() {
+  Future<void> _showSoundFontPicker() async {
     final candidateDirs = [
+      '/sdcard/SongHub/sound',
+      '/storage/emulated/0/SongHub/sound',
       '/sdcard/Download/KaraokeHub/content/sound',
       '/sdcard/Download/karaokehub/content/sound',
+      '/storage/emulated/0/Download/KaraokeHub/content/sound',
       '/sdcard/Download',
+      '/storage/emulated/0/Download',
       '/sdcard/KaraokeHub',
+      '/sdcard/SongHub',
+      '/storage/emulated/0/SongHub',
     ];
-    final foundFiles = <File>[];
+
+    final foundItems = <Map<String, dynamic>>[];
+    final seenPaths = <String>{};
+
+    // 1. Query native bridge discovery
+    try {
+      final nativeList = await AudioEngineService().getSoundFonts();
+      for (final item in nativeList) {
+        final path = item['path'] as String? ?? '';
+        if (path.isNotEmpty && !seenPaths.contains(path)) {
+          seenPaths.add(path);
+          foundItems.add(item);
+        }
+      }
+    } catch (_) {}
+
+    // 2. Scan candidate directories directly via Dart I/O
     for (final d in candidateDirs) {
       try {
         final dir = Directory(d);
         if (dir.existsSync()) {
           for (final f in dir.listSync().whereType<File>()) {
             if (f.path.toLowerCase().endsWith('.sf2')) {
-              if (!foundFiles.any((existing) => existing.path == f.path)) {
-                foundFiles.add(f);
+              if (!seenPaths.contains(f.path)) {
+                seenPaths.add(f.path);
+                foundItems.add({
+                  'name': f.uri.pathSegments.last,
+                  'path': f.path,
+                  'sizeBytes': f.lengthSync(),
+                });
               }
             }
           }
         }
       } catch (_) {}
     }
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -460,30 +489,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Select SoundFont (.sf2)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: SizedBox(
           width: double.maxFinite,
-          child: foundFiles.isEmpty
-              ? const Text('No .sf2 soundfont files found in /sdcard/Download/KaraokeHub/content/sound', style: TextStyle(color: Colors.white70))
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: foundFiles.length,
-                  itemBuilder: (ctx, i) {
-                    final file = foundFiles[i];
-                    final name = file.uri.pathSegments.last;
-                    final isSelected = _settings.selectedSf2Path == file.path;
-                    return ListTile(
-                      title: Text(name, style: TextStyle(color: isSelected ? const Color(0xFF00F2FE) : Colors.white, fontWeight: FontWeight.bold)),
-                      subtitle: Text('${(file.lengthSync() / (1024 * 1024)).toStringAsFixed(1)} MB', style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                      trailing: isSelected ? const Icon(Icons.check_circle_rounded, color: Color(0xFF00F2FE)) : null,
-                      onTap: () {
-                        setState(() {
-                          _settings.selectedSf2Path = file.path;
-                          _settings.selectedSf2Name = name;
-                        });
-                        _settings.saveSettings();
-                        Navigator.pop(ctx);
-                      },
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: const Text('Automatic (Best Available)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('Auto-detects TBOSf, Dream_Sam, or default .sf2', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                trailing: _settings.selectedSf2Path == null || _settings.selectedSf2Path!.isEmpty
+                    ? const Icon(Icons.check_circle_rounded, color: Color(0xFF00F2FE))
+                    : null,
+                onTap: () async {
+                  setState(() {
+                    _settings.selectedSf2Path = null;
+                    _settings.selectedSf2Name = 'Automatic (Best Available)';
+                  });
+                  await _settings.saveSettings();
+                  await AudioEngineService().setSoundFont(null);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('SoundFont set to Automatic')),
                     );
-                  },
-                ),
+                  }
+                },
+              ),
+              const Divider(color: Colors.white24),
+              if (foundItems.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('No .sf2 soundfont files found in storage.', style: TextStyle(color: Colors.white70)),
+                )
+              else
+                ...foundItems.map((item) {
+                  final name = item['name'] as String? ?? 'SoundFont';
+                  final path = item['path'] as String? ?? '';
+                  final sizeBytes = item['sizeBytes'] as int? ?? 0;
+                  final sizeMb = (sizeBytes / (1024 * 1024)).toStringAsFixed(1);
+                  final isSelected = _settings.selectedSf2Path == path;
+
+                  return ListTile(
+                    title: Text(name, style: TextStyle(color: isSelected ? const Color(0xFF00F2FE) : Colors.white, fontWeight: FontWeight.bold)),
+                    subtitle: Text('$sizeMb MB • $path', style: const TextStyle(color: Colors.white54, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: isSelected ? const Icon(Icons.check_circle_rounded, color: Color(0xFF00F2FE)) : null,
+                    onTap: () async {
+                      setState(() {
+                        _settings.selectedSf2Path = path;
+                        _settings.selectedSf2Name = name;
+                      });
+                      await _settings.saveSettings();
+                      await AudioEngineService().setSoundFont(path);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Active SoundFont: $name')),
+                        );
+                      }
+                    },
+                  );
+                }),
+            ],
+          ),
         ),
         actions: [
           TextButton(

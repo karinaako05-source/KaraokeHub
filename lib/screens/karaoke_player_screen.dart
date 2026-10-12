@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../models/song_item.dart';
+import '../models/app_settings.dart';
 import '../services/audio_engine_service.dart';
 import '../services/song_catalog_service.dart';
 import '../services/videoke_flow_manager.dart';
@@ -364,6 +365,14 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
             text: 'RSV LIST',
             textColor: const Color(0xFFFFB300),
             onTap: _showReservedSongsSheet,
+          ),
+          const SizedBox(width: 4),
+
+          // player_soundfont: SF2 quick picker button
+          _buildConsoleGlassBtn(
+            text: 'SF2',
+            textColor: const Color(0xFFE040FB),
+            onTap: _showSoundFontQuickPicker,
           ),
         ],
       ),
@@ -849,6 +858,174 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       height: 18,
       margin: const EdgeInsets.symmetric(horizontal: 5),
       color: const Color(0x33FFFFFF), // 33FFFFFF from native layout
+    );
+  }
+
+  Future<void> _showSoundFontQuickPicker() async {
+    final settings = AppSettings();
+    final candidateDirs = [
+      '/sdcard/SongHub/sound',
+      '/storage/emulated/0/SongHub/sound',
+      '/sdcard/Download/KaraokeHub/content/sound',
+      '/sdcard/Download/karaokehub/content/sound',
+      '/storage/emulated/0/Download/KaraokeHub/content/sound',
+      '/sdcard/Download',
+      '/storage/emulated/0/Download',
+      '/sdcard/KaraokeHub',
+      '/sdcard/SongHub',
+      '/storage/emulated/0/SongHub',
+    ];
+
+    final foundItems = <Map<String, dynamic>>[];
+    final seenPaths = <String>{};
+
+    try {
+      final nativeList = await AudioEngineService().getSoundFonts();
+      for (final item in nativeList) {
+        final path = item['path'] as String? ?? '';
+        if (path.isNotEmpty && !seenPaths.contains(path)) {
+          seenPaths.add(path);
+          foundItems.add(item);
+        }
+      }
+    } catch (_) {}
+
+    for (final d in candidateDirs) {
+      try {
+        final dir = Directory(d);
+        if (dir.existsSync()) {
+          for (final f in dir.listSync().whereType<File>()) {
+            if (f.path.toLowerCase().endsWith('.sf2')) {
+              if (!seenPaths.contains(f.path)) {
+                seenPaths.add(f.path);
+                foundItems.add({
+                  'name': f.uri.pathSegments.last,
+                  'path': f.path,
+                  'sizeBytes': f.lengthSync(),
+                });
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.6,
+          padding: const EdgeInsets.all(20),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0C101B),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(top: BorderSide(color: Color(0xFFE040FB), width: 2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.piano_rounded, color: Color(0xFFE040FB), size: 22),
+                      SizedBox(width: 8),
+                      Text(
+                        'SELECT SOUNDFONT (.SF2)',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: ListView(
+                  children: [
+                    ListTile(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      tileColor: settings.selectedSf2Path == null ? const Color(0x33E040FB) : Colors.transparent,
+                      title: const Text('Automatic (Best Available)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      subtitle: const Text('TBOSf, Dream_Sam, or default GM soundfont', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                      trailing: settings.selectedSf2Path == null
+                          ? const Icon(Icons.check_circle_rounded, color: Color(0xFFE040FB))
+                          : null,
+                      onTap: () async {
+                        await _flow.switchSoundFont(null);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('SoundFont set to Automatic')),
+                          );
+                        }
+                      },
+                    ),
+                    const Divider(color: Colors.white24),
+                    if (foundItems.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Center(
+                          child: Text(
+                            'No .sf2 soundfont files found on device storage.\nPlace .sf2 files in SongHub/sound or Download/KaraokeHub/content/sound',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.white60),
+                          ),
+                        ),
+                      )
+                    else
+                      ...foundItems.map((item) {
+                        final name = item['name'] as String? ?? 'SoundFont';
+                        final path = item['path'] as String? ?? '';
+                        final sizeBytes = item['sizeBytes'] as int? ?? 0;
+                        final sizeMb = (sizeBytes / (1024 * 1024)).toStringAsFixed(1);
+                        final isSelected = settings.selectedSf2Path == path;
+
+                        return ListTile(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          tileColor: isSelected ? const Color(0x33E040FB) : Colors.transparent,
+                          title: Text(
+                            name,
+                            style: TextStyle(
+                              color: isSelected ? const Color(0xFFE040FB) : Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '$sizeMb MB • $path',
+                            style: const TextStyle(color: Colors.white54, fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_circle_rounded, color: Color(0xFFE040FB))
+                              : null,
+                          onTap: () async {
+                            await _flow.switchSoundFont(path);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Switched to SoundFont: $name')),
+                              );
+                            }
+                          },
+                        );
+                      }),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

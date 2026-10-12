@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../models/song_item.dart';
+import '../models/app_settings.dart';
 import 'audio_engine_service.dart';
 
 class VideokeFlowManager extends ChangeNotifier {
@@ -9,6 +10,12 @@ class VideokeFlowManager extends ChangeNotifier {
   factory VideokeFlowManager() => _instance;
   VideokeFlowManager._internal() {
     _audio.onSongEnded = _handleSongEnded;
+    _initSoundFont();
+  }
+
+  void _initSoundFont() {
+    final sfPath = AppSettings().selectedSf2Path;
+    _audio.setSoundFont(sfPath);
   }
 
   final AudioEngineService _audio = AudioEngineService();
@@ -174,6 +181,22 @@ class VideokeFlowManager extends ChangeNotifier {
   void clearQueue() {
     _queue.clear();
     notifyListeners();
+  }
+
+  Future<bool> switchSoundFont(String? path) async {
+    final ok = await _audio.setSoundFont(path);
+    if (ok) {
+      final settings = AppSettings();
+      settings.selectedSf2Path = path;
+      if (path != null) {
+        settings.selectedSf2Name = path.split('/').last;
+      } else {
+        settings.selectedSf2Name = 'Automatic (Best Available)';
+      }
+      await settings.saveSettings();
+      notifyListeners();
+    }
+    return ok;
   }
 
   void showScore() {

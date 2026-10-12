@@ -60,9 +60,20 @@ class MainActivity: FlutterActivity() {
         initSoundFont()
     }
 
-    private fun initSoundFont() {
-        if (sfSynth != null && sfSynth?.isReady() == true) return
-        val candidateSf2 = listOf(
+    private fun loadSoundFont(targetPath: String? = null): Boolean {
+        val pathsToTry = mutableListOf<String>()
+        if (!targetPath.isNullOrEmpty()) {
+            pathsToTry.add(targetPath)
+        }
+        pathsToTry.addAll(listOf(
+            "/sdcard/SongHub/sound/TBOSf.sf2",
+            "/sdcard/SongHub/sound/Dream_Sam2634_V_0.2.1.6.sf2",
+            "/sdcard/SongHub/sound/soundfont.sf2",
+            "/sdcard/SongHub/sound/Yamaha FF8 GM.sf2",
+            "/sdcard/SongHub/sound/YAMAHA_PSR400-500.sf2",
+            "/storage/emulated/0/SongHub/sound/TBOSf.sf2",
+            "/storage/emulated/0/SongHub/sound/Dream_Sam2634_V_0.2.1.6.sf2",
+            "/storage/emulated/0/SongHub/sound/soundfont.sf2",
             "/sdcard/Download/KaraokeHub/content/sound/soundfont.sf2",
             "/sdcard/Download/KaraokeHub/content/sound/TBOSf.sf2",
             "/sdcard/Download/KaraokeHub/content/sound/Dream_Sam2634_V_0.2.1.6.sf2",
@@ -73,13 +84,13 @@ class MainActivity: FlutterActivity() {
             "/sdcard/KaraokeHub/soundfont.sf2",
             "/storage/emulated/0/Download/soundfont.sf2",
             "/sdcard/CodeOnTheGoProjects/PinoyVideokeNative/app/build/intermediates/assets/debug/soundfont.sf2"
-        )
-        for (p in candidateSf2) {
+        ))
+
+        for (p in pathsToTry) {
             try {
                 val f = File(p)
                 if (f.exists() && f.length() > 0) {
                     val synth = SoundFontSynth()
-                    // 1. Try direct C/C++ file load (avoids reading 100MB into Dalvik heap)
                     var ok = synth.initFromFile(f.absolutePath)
                     if (!ok) {
                         try {
@@ -87,18 +98,68 @@ class MainActivity: FlutterActivity() {
                         } catch (_: OutOfMemoryError) {}
                     }
                     if (ok) {
+                        try { sfSynth?.release() } catch (_: Throwable) {}
                         sfSynth = synth
-                        soundFontLoadedPath = p
+                        soundFontLoadedPath = f.absolutePath
                         sfSynth?.onComplete = {
                             runOnUiThread {
                                 methodChannel?.invokeMethod("onSongEnded", null)
                             }
                         }
-                        break
+                        return true
                     }
                 }
             } catch (_: Throwable) {}
         }
+        return false
+    }
+
+    private fun initSoundFont() {
+        if (sfSynth != null && sfSynth?.isReady() == true) return
+        loadSoundFont()
+    }
+
+    private fun discoverSoundFonts(): List<Map<String, Any>> {
+        val candidateRoots = listOf(
+            File("/sdcard"),
+            File("/storage/emulated/0"),
+            File("/sdcard/SongHub"),
+            File("/sdcard/Download"),
+            File("/sdcard/KaraokeHub"),
+            File("/storage/emulated/0/SongHub"),
+            File("/storage/emulated/0/Download")
+        )
+        val sfFiles = mutableListOf<File>()
+        for (root in candidateRoots) {
+            if (!root.exists() || !root.isDirectory) continue
+            // 1. Root level files
+            root.listFiles()?.forEach {
+                if (it.isFile && it.extension.equals("sf2", true)) sfFiles.add(it)
+            }
+            // 2. Direct "sound" folder
+            val soundDir = File(root, "sound")
+            if (soundDir.exists() && soundDir.isDirectory) {
+                soundDir.listFiles()?.forEach {
+                    if (it.isFile && it.extension.equals("sf2", true)) sfFiles.add(it)
+                }
+            }
+            // 3. "content/sound"
+            val contentSoundDir = File(root, "content/sound")
+            if (contentSoundDir.exists() && contentSoundDir.isDirectory) {
+                contentSoundDir.listFiles()?.forEach {
+                    if (it.isFile && it.extension.equals("sf2", true)) sfFiles.add(it)
+                }
+            }
+        }
+        return sfFiles.distinctBy { it.absolutePath }
+            .sortedBy { it.name.lowercase() }
+            .map {
+                mapOf(
+                    "name" to it.name,
+                    "path" to it.absolutePath,
+                    "sizeBytes" to it.length()
+                )
+            }
     }
 
     private fun promptStoragePermissionIfNeeded() {
@@ -344,6 +405,14 @@ class MainActivity: FlutterActivity() {
                             "soundfontActive" to (sfSynth?.isReady() == true),
                             "soundfontPath" to (soundFontLoadedPath ?: "Android Native Sonivox Synth")
                         ))
+                    }
+                    "setSoundFont" -> {
+                        val path = call.argument<String>("path")
+                        val ok = loadSoundFont(path)
+                        result.success(ok)
+                    }
+                    "getSoundFonts" -> {
+                        result.success(discoverSoundFonts())
                     }
                     "setPitch" -> {
                         val semitones = call.argument<Int>("semitones") ?: 0
