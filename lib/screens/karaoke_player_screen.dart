@@ -243,30 +243,18 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
           SafeArea(
             child: Column(
               children: [
-                // Authentic Videoke Top HUD Bar
+                // Authentic Videoke Top HUD Bar (matching player_top_bar)
                 _buildTopHudBar(current),
 
                 const Spacer(),
 
-                // Live Stage Lyric Prompter & Intro Countdown
+                // Live Stage Lyric Prompter & Floating Lead-In Countdown (matching KaraokeLyricView.kt)
                 _buildStageLyricArea(current),
 
                 const Spacer(),
 
-                // Read-only Videoke Progress Bar (Non-draggable)
-                if (_durationMs > 0) _buildReadOnlyProgressBar(),
-
-                const SizedBox(height: 8),
-
-                // Compact Videoke Tuning Bar (Key & Tempo)
-                _buildTuningBar(),
-
-                const SizedBox(height: 10),
-
-                // Authentic Videoke Bottom Transport Controls
-                _buildTransportControls(),
-
-                const SizedBox(height: 10),
+                // Authentic Videoke Console Bar (matching player_controls in #D00A0F1D)
+                _buildBottomControls(),
               ],
             ),
           ),
@@ -279,180 +267,103 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   }
 
   // ==========================================
-  // TOP HUD BAR (Iconic Videoke Header)
+  // TOP HUD BAR (Matching activity_karaoke_player.xml player_top_bar)
   // ==========================================
   Widget _buildTopHudBar(SongItem current) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      height: 48,
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0C101B).withOpacity(0.85),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        color: const Color(0xD00A0F1D), // Native #D00A0F1D dark translucent glass
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
       ),
       child: Row(
         children: [
-          // Back Button
-          InkWell(
+          // player_back: Back button (‹)
+          _buildConsoleGlassBtn(
+            text: '‹',
+            textColor: Colors.white,
+            fontSize: 20,
             onTap: () => Navigator.of(context).pop(),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(8),
+          ),
+          const SizedBox(width: 6),
+
+          // player_reserve_badge: Outlined Cyan Badge (R: N)
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _showReservedSongsSheet,
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _flow.queue.isNotEmpty ? const Color(0xFF003847) : Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: _flow.queue.isNotEmpty ? const Color(0xFF00E5FF) : Colors.white24,
+                    width: 1.2,
+                  ),
+                ),
+                child: Text(
+                  'R: ${_flow.queue.length}',
+                  style: const TextStyle(
+                    color: Color(0xFF00E5FF),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
               ),
-              child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 16),
             ),
           ),
           const SizedBox(width: 8),
 
-          // Reserved Songs Badge (R: N) - Clickable to open Reserved Overlay
-          InkWell(
-            onTap: _showReservedSongsSheet,
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: _flow.queue.isNotEmpty ? const Color(0xFF003847) : const Color(0xFF161F30),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: _flow.queue.isNotEmpty ? const Color(0xFF00F2FE) : Colors.white24,
-                  width: 1.5,
-                ),
-                boxShadow: _flow.queue.isNotEmpty
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFF00F2FE).withOpacity(0.4),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.format_list_numbered_rounded,
-                    color: _flow.queue.isNotEmpty ? const Color(0xFF00F2FE) : Colors.white60,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    'R: ${_flow.queue.length}',
-                    style: TextStyle(
-                      color: _flow.queue.isNotEmpty ? const Color(0xFF00F2FE) : Colors.white70,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // Playing Marquee Banner
+          // player_title: Marquee single-line title
           Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: _flow.isPlaying ? const Color(0xFF00E676) : const Color(0xFFFF2A6D),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _flow.isPlaying
-                          ? '🎤 [${current.code}] ${current.title.toUpperCase()} • ${current.artist}'
-                          : 'PAUSED: [${current.code}] ${current.title}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _flow.isPlaying ? const Color(0xFF00E676) : const Color(0xFFFF9800),
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
+            child: Text(
+              _flow.isPlaying
+                  ? '🎤 Playing: [${current.code}] ${current.title.toUpperCase()} - ${current.artist}'
+                  : 'PAUSED: [${current.code}] ${current.title}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _flow.isPlaying ? const Color(0xFFFFEB3B) : const Color(0xFFFF9800),
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                shadows: const [
+                  Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1)),
                 ],
               ),
             ),
           ),
+          const SizedBox(width: 6),
 
-          // Action Cluster: 🔢 SELECT (Dialpad) & 🔍 Search & BGV
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 🔢 SELECT (Keypad Dialpad Modal)
-              InkWell(
-                onTap: _showKeypadDialog,
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF6D00).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFF6D00), width: 1.2),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.dialpad_rounded, color: Color(0xFFFF9100), size: 13),
-                      SizedBox(width: 4),
-                      Text(
-                        'SELECT',
-                        style: TextStyle(
-                          color: Color(0xFFFF9100),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
+          // player_keypad_toggle: 🔢 SELECT (Orange button)
+          _buildConsoleGlassBtn(
+            text: '🔢 SELECT',
+            textColor: const Color(0xFFFF9800),
+            onTap: _showKeypadDialog,
+          ),
+          const SizedBox(width: 4),
 
-              // 🔍 Quick Search
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                icon: const Icon(Icons.search_rounded, color: Color(0xFF00F2FE), size: 18),
-                tooltip: 'Search & Reserve',
-                onPressed: _showSearchAndReserveDialog,
-              ),
+          // player_btn_search: Search icon button
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: const Icon(Icons.search_rounded, color: Color(0xFF00E5FF), size: 18),
+            tooltip: 'Search Songs',
+            onPressed: _showSearchAndReserveDialog,
+          ),
+          const SizedBox(width: 4),
 
-              // BGV Badge
-              if (_bgvVideos.isNotEmpty)
-                InkWell(
-                  onTap: _cycleNextBgv,
-                  onLongPress: _toggleBgv,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    margin: const EdgeInsets.only(left: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _isBgvEnabled ? const Color(0xFF1E293B) : Colors.black54,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: Icon(
-                      _isBgvEnabled ? Icons.videocam_rounded : Icons.videocam_off_rounded,
-                      size: 13,
-                      color: _isBgvEnabled ? const Color(0xFF00F2FE) : Colors.white38,
-                    ),
-                  ),
-                ),
-            ],
+          // player_queue: RSV LIST (Amber button)
+          _buildConsoleGlassBtn(
+            text: 'RSV LIST',
+            textColor: const Color(0xFFFFB300),
+            onTap: _showReservedSongsSheet,
           ),
         ],
       ),
@@ -460,84 +371,165 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   }
 
   // ==========================================
-  // STAGE LYRICS AREA & INTRO BANNER
+  // STAGE LYRIC AREA (Matching KaraokeLyricView.kt)
+  // Dual-line alternating rows with non-intrusive floating lead-in countdown
   // ==========================================
   Widget _buildStageLyricArea(SongItem current) {
-    String prevText = "";
-    String curText = "";
-    String nextText = "";
-
-    int countdownBeat = 0;
-    String countdownUpcomingText = "";
-    String countdownLabel = "GET READY TO SING";
-
-    if (_timedLyrics.isNotEmpty) {
-      final firstLyricTimeMs = _timedLyrics.first['timeMs'] as int? ?? 0;
-      if (_activeLyricIndex < 0) {
-        if (firstLyricTimeMs >= 3500) {
-          if (_positionMs >= (firstLyricTimeMs - 4000) && _positionMs < firstLyricTimeMs) {
-            final remainingMs = firstLyricTimeMs - _positionMs;
-            countdownBeat = (remainingMs / 1000).ceil().clamp(1, 4);
-            countdownUpcomingText = _timedLyrics.first['text'] as String? ?? "";
-            countdownLabel = "GET READY TO SING";
-          }
-        } else if (firstLyricTimeMs > 400) {
-          if (_positionMs < firstLyricTimeMs) {
-            final step = firstLyricTimeMs / 4.0;
-            countdownBeat = ((firstLyricTimeMs - _positionMs) / step).ceil().clamp(1, 4);
-            countdownUpcomingText = _timedLyrics.first['text'] as String? ?? "";
-            countdownLabel = "GET READY TO SING";
-          }
-        }
-      } else if (_activeLyricIndex >= 0 && _activeLyricIndex + 1 < _timedLyrics.length) {
-        final nextLyric = _timedLyrics[_activeLyricIndex + 1];
-        final nextTimeMs = nextLyric['timeMs'] as int? ?? 0;
-        final curTokens = (_timedLyrics[_activeLyricIndex]['tokens'] as List?) ?? [];
-        final curEndMs = curTokens.isNotEmpty
-            ? (curTokens.last['endMs'] as int? ?? _timedLyrics[_activeLyricIndex]['timeMs'] as int? ?? 0)
-            : (_timedLyrics[_activeLyricIndex]['timeMs'] as int? ?? 0) + 2500;
-        if (_positionMs >= curEndMs && (nextTimeMs - _positionMs) <= 4000 && (nextTimeMs - _positionMs) > 100) {
-          final remainingMs = nextTimeMs - _positionMs;
-          countdownBeat = (remainingMs / 1000).ceil().clamp(1, 4);
-          countdownUpcomingText = nextLyric['text'] as String? ?? "";
-          countdownLabel = "NEXT VERSE READY";
-        }
-      }
-    } else if (_positionMs < 4000 && _flow.isPlaying) {
-      final remainingMs = 4000 - _positionMs;
-      countdownBeat = (remainingMs / 1000).ceil().clamp(1, 4);
-      countdownUpcomingText = current.title;
-      countdownLabel = "GET READY TO SING";
-    }
-
     if (_timedLyrics.isEmpty) {
-      prevText = "♪ VIDEOKE STAGE ACTIVE ♪";
-      curText = current.title;
-      nextText = "♪ ${current.artist} • Sing along with the melody ♪";
-    } else if (_activeLyricIndex < 0) {
-      prevText = "♪ INTRO ♪";
-      curText = _timedLyrics.first['text'] as String? ?? "";
-      nextText = _timedLyrics.length > 1 ? (_timedLyrics[1]['text'] as String? ?? "") : "";
-    } else {
-      prevText = _activeLyricIndex > 0 ? (_timedLyrics[_activeLyricIndex - 1]['text'] as String? ?? "") : "";
-      curText = _timedLyrics[_activeLyricIndex]['text'] as String? ?? "";
-      nextText = _activeLyricIndex + 1 < _timedLyrics.length ? (_timedLyrics[_activeLyricIndex + 1]['text'] as String? ?? "") : "♪ OUTRO ♪";
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        children: [
-          // Intro Song Banner (shown during intro before lyrics)
-          if (_activeLyricIndex < 0 && _flow.isPlaying) ...[
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
               current.title.toUpperCase(),
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 26,
+                fontSize: 28,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
+                shadows: [
+                  Shadow(color: Colors.black, blurRadius: 10, offset: Offset(2, 2)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              current.artist,
+              style: const TextStyle(
+                color: Color(0xFFFFEB3B),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                  Shadow(color: Colors.black, blurRadius: 6, offset: Offset(1, 1)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.music_note_rounded, color: Color(0xFF00E5FF), size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'Sing along with the melody',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Determine current dual-line assignments and countdown
+    Map<String, dynamic>? row0Line;
+    Map<String, dynamic>? row1Line;
+    bool isRow0Active = false;
+    bool isRow1Active = false;
+
+    int countdownBeat = 0;
+    bool countdownOnRow0 = true;
+    bool isInterlude = false;
+
+    final firstLyricTimeMs = _timedLyrics.first['timeMs'] as int? ?? 0;
+
+    if (_activeLyricIndex < 0) {
+      // Intro phase before first lyric line begins
+      row0Line = _timedLyrics.first;
+      if (_timedLyrics.length > 1) {
+        row1Line = _timedLyrics[1];
+      }
+
+      if (firstLyricTimeMs >= 3500) {
+        if (_positionMs >= (firstLyricTimeMs - 4000) && _positionMs < firstLyricTimeMs) {
+          final remainingMs = firstLyricTimeMs - _positionMs;
+          countdownBeat = (remainingMs / 1000).ceil().clamp(1, 4);
+          countdownOnRow0 = true;
+        }
+      } else if (firstLyricTimeMs > 400 && _positionMs < firstLyricTimeMs) {
+        final step = firstLyricTimeMs / 4.0;
+        countdownBeat = ((firstLyricTimeMs - _positionMs) / step).ceil().clamp(1, 4);
+        countdownOnRow0 = true;
+      }
+    } else {
+      // Regular singing phase: alternating between even (Row 0) and odd (Row 1)
+      if (_activeLyricIndex % 2 == 0) {
+        // Even line is active on Row 0 (Top line, left-aligned)
+        row0Line = _timedLyrics[_activeLyricIndex];
+        isRow0Active = true;
+
+        if (_activeLyricIndex + 1 < _timedLyrics.length) {
+          row1Line = _timedLyrics[_activeLyricIndex + 1];
+        }
+
+        // Check for countdown / interlude for upcoming Row 1
+        if (row1Line != null) {
+          final nextTimeMs = row1Line['timeMs'] as int? ?? 0;
+          final curTokens = (row0Line['tokens'] as List?) ?? [];
+          final curEndMs = curTokens.isNotEmpty
+              ? (curTokens.last['endMs'] as int? ?? row0Line['timeMs'] as int? ?? 0)
+              : (row0Line['timeMs'] as int? ?? 0) + 2500;
+
+          final gapMs = nextTimeMs - curEndMs;
+          if (_positionMs >= curEndMs && (nextTimeMs - _positionMs) <= 4000 && (nextTimeMs - _positionMs) > 100) {
+            countdownBeat = ((nextTimeMs - _positionMs) / 1000).ceil().clamp(1, 4);
+            countdownOnRow0 = false;
+          } else if (_positionMs >= curEndMs && gapMs >= 5000 && (nextTimeMs - _positionMs) > 4000) {
+            isInterlude = true;
+          }
+        }
+      } else {
+        // Odd line is active on Row 1 (Bottom line, right-aligned)
+        row1Line = _timedLyrics[_activeLyricIndex];
+        isRow1Active = true;
+
+        if (_activeLyricIndex + 1 < _timedLyrics.length) {
+          row0Line = _timedLyrics[_activeLyricIndex + 1];
+        }
+
+        // Check for countdown / interlude for upcoming Row 0
+        if (row0Line != null) {
+          final nextTimeMs = row0Line['timeMs'] as int? ?? 0;
+          final curTokens = (row1Line['tokens'] as List?) ?? [];
+          final curEndMs = curTokens.isNotEmpty
+              ? (curTokens.last['endMs'] as int? ?? row1Line['timeMs'] as int? ?? 0)
+              : (row1Line['timeMs'] as int? ?? 0) + 2500;
+
+          final gapMs = nextTimeMs - curEndMs;
+          if (_positionMs >= curEndMs && (nextTimeMs - _positionMs) <= 4000 && (nextTimeMs - _positionMs) > 100) {
+            countdownBeat = ((nextTimeMs - _positionMs) / 1000).ceil().clamp(1, 4);
+            countdownOnRow0 = true;
+          } else if (_positionMs >= curEndMs && gapMs >= 5000 && (nextTimeMs - _positionMs) > 4000) {
+            isInterlude = true;
+          }
+        }
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Intro Title & Singer Banner (shown during opening intro before lyrics begin)
+          if (_activeLyricIndex < 0 && _positionMs < 4500) ...[
+            Text(
+              current.title.toUpperCase(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
                 shadows: [
                   Shadow(color: Colors.black, blurRadius: 10, offset: Offset(2, 2)),
                 ],
@@ -549,169 +541,263 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
             Text(
               current.artist,
               style: const TextStyle(
-                color: Color(0xFFFFD700),
-                fontSize: 16,
+                color: Color(0xFFFFEB3B),
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
                 shadows: [
                   Shadow(color: Colors.black, blurRadius: 8, offset: Offset(1, 1)),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-          ] else ...[
-            // Previous lyric
-            Text(
-              prevText,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.25),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
             const SizedBox(height: 18),
           ],
 
-          // Active Sing-Along Videoke Display or Countdown
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
-            child: countdownBeat > 0
-                ? VideokeCountdownWidget(
-                    key: ValueKey('countdown-$countdownBeat-$countdownLabel'),
-                    count: countdownBeat,
-                    upcomingLyric: countdownUpcomingText,
-                    label: countdownLabel,
-                  )
-                : Container(
-                    key: ValueKey('$_activeLyricIndex-$curText'),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFF00F2FE).withOpacity(0.12),
-                          const Color(0xFF9B51E0).withOpacity(0.12),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.35)),
+          // ROW 0: Top Line (Left-aligned with side margin, matching KaraokeLyricView.kt)
+          if (row0Line != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Non-intrusive floating countdown lead-in directly above Row 0
+                if (countdownBeat > 0 && countdownOnRow0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: VideokeCountdownWidget(
+                      count: countdownBeat,
+                      label: 'SING',
                     ),
-                    child: _activeLyricIndex >= 0 && _activeLyricIndex < _timedLyrics.length
-                        ? VideokeLyricWidget(
-                            lyricLine: _timedLyrics[_activeLyricIndex],
-                            positionMs: _positionMs,
-                            highlightColor: const Color(0xFF00F2FE),
-                            fontSize: 22.0,
-                            outlineWidth: 4.0,
-                          )
-                        : (_timedLyrics.isNotEmpty
-                            ? VideokeLyricWidget(
-                                lyricLine: _timedLyrics.first,
-                                positionMs: 0,
-                                highlightColor: const Color(0xFF00F2FE),
-                                fontSize: 22.0,
-                                outlineWidth: 4.0,
-                              )
-                            : Text(
-                                curText,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  height: 1.3,
-                                ),
-                              )),
                   ),
-          ),
 
-          const SizedBox(height: 18),
-
-          // Next lyric
-          Text(
-            nextText,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.35),
-              fontSize: 15,
+                VideokeLyricWidget(
+                  lyricLine: row0Line,
+                  positionMs: isRow0Active ? _positionMs : 0,
+                  highlightColor: const Color(0xFFFFD600), // Authentic KTV Warm Gold
+                  fontSize: 24.0,
+                  outlineWidth: 4.5,
+                  alignment: Alignment.centerLeft,
+                  textAlign: TextAlign.left,
+                ),
+              ],
             ),
-          ),
+
+          // Interlude Instrumental Pill Badge (between rows during musical pauses)
+          if (isInterlude) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.6)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.music_note_rounded, color: Color(0xFF00E5FF), size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'Instrumental',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ] else
+            const SizedBox(height: 16),
+
+          // ROW 1: Bottom Line (Right-aligned with side margin, matching KaraokeLyricView.kt)
+          if (row1Line != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Non-intrusive floating countdown lead-in directly above Row 1
+                if (countdownBeat > 0 && !countdownOnRow0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: VideokeCountdownWidget(
+                      count: countdownBeat,
+                      label: 'SING',
+                    ),
+                  ),
+
+                VideokeLyricWidget(
+                  lyricLine: row1Line,
+                  positionMs: isRow1Active ? _positionMs : 0,
+                  highlightColor: const Color(0xFFFFD600), // Authentic KTV Warm Gold
+                  fontSize: 24.0,
+                  outlineWidth: 4.5,
+                  alignment: Alignment.centerRight,
+                  textAlign: TextAlign.right,
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
 
   // ==========================================
-  // READ-ONLY PROGRESS BAR
+  // AUTHENTIC VIDEOKE BOTTOM CONTROLS
+  // Matching activity_karaoke_player.xml player_controls in #D00A0F1D
   // ==========================================
-  Widget _buildReadOnlyProgressBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+  Widget _buildBottomControls() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xD00A0F1D), // Exact #D00A0F1D from native Android layout
+        border: Border(top: BorderSide(color: Colors.white.withOpacity(0.08), width: 1)),
+      ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            height: 4,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white12,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: (_positionMs / _durationMs).clamp(0.0, 1.0),
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF00F2FE), Color(0xFF9B51E0)],
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0xFF00F2FE),
-                      blurRadius: 6,
-                      spreadRadius: 1,
+          // Row 1: Time & Seek progress bar
+          Row(
+            children: [
+              Text(
+                _formatTime(_positionMs),
+                style: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: SizedBox(
+                    height: 4,
+                    child: LinearProgressIndicator(
+                      value: _durationMs > 0 ? (_positionMs / _durationMs).clamp(0.0, 1.0) : 0.0,
+                      backgroundColor: Colors.white12,
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00E5FF)),
                     ),
-                  ],
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
+              Text(
+                _formatTime(_durationMs),
+                style: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+
+          // Row 2: Tuning Controls (K-, KEY 0, K+ | T-, TEMPO 0, T+ | MEL | BGV | REC)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildConsoleGlassBtn(
+                  text: 'K-',
+                  textColor: const Color(0xFF00E5FF),
+                  onTap: () => _flow.setPitch(_flow.pitch - 1),
+                ),
+                const SizedBox(width: 3),
+                _buildConsoleGlassBtn(
+                  text: _flow.pitch == 0 ? 'KEY 0' : 'KEY: ${_flow.pitch > 0 ? "+${_flow.pitch}" : _flow.pitch}',
+                  textColor: Colors.white,
+                  onTap: () => _flow.setPitch(0),
+                ),
+                const SizedBox(width: 3),
+                _buildConsoleGlassBtn(
+                  text: 'K+',
+                  textColor: const Color(0xFF00E5FF),
+                  onTap: () => _flow.setPitch(_flow.pitch + 1),
+                ),
+
+                _buildConsoleDivider(),
+
+                _buildConsoleGlassBtn(
+                  text: 'T-',
+                  textColor: const Color(0xFFFF9800),
+                  onTap: () => _flow.setTempo((_flow.tempo - 0.05).clamp(0.5, 1.5)),
+                ),
+                const SizedBox(width: 3),
+                _buildConsoleGlassBtn(
+                  text: (_flow.tempo - 1.0).abs() < 0.02 ? 'TEMPO 0' : 'TEM: ${(_flow.tempo * 100).toInt()}%',
+                  textColor: Colors.white,
+                  onTap: () => _flow.setTempo(1.0),
+                ),
+                const SizedBox(width: 3),
+                _buildConsoleGlassBtn(
+                  text: 'T+',
+                  textColor: const Color(0xFFFF9800),
+                  onTap: () => _flow.setTempo((_flow.tempo + 0.05).clamp(0.5, 1.5)),
+                ),
+
+                _buildConsoleDivider(),
+
+                _buildConsoleGlassBtn(
+                  text: 'MEL',
+                  textColor: const Color(0xFF76FF03),
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Melody Guide Active'), duration: Duration(milliseconds: 700)),
+                    );
+                  },
+                ),
+                const SizedBox(width: 3),
+                _buildConsoleGlassBtn(
+                  text: 'BGV',
+                  textColor: const Color(0xFFCE93D8),
+                  onTap: _cycleNextBgv,
+                  onLongPress: _toggleBgv,
+                ),
+                const SizedBox(width: 3),
+                _buildConsoleGlassBtn(
+                  text: 'REC',
+                  textColor: const Color(0xFFEF9A9A),
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Recording Standby'), duration: Duration(milliseconds: 700)),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
+          const SizedBox(height: 5),
+
+          // Row 3: Transport Controls (⏮ REPLAY | ⏸ PAUSE / ▶ PLAY | ⏭ NEXT | ⏹ STOP | 👏 CHEER | ★ SCORE)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  _formatTime(_positionMs),
-                  style: const TextStyle(
-                    color: Color(0xFF00F2FE),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
+                _buildConsoleGlassBtn(
+                  text: '⏮ REPLAY',
+                  textColor: Colors.white,
+                  onTap: () => _flow.replay(),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'REALTIME VIDEOKE',
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
+                const SizedBox(width: 4),
+                _buildConsoleGlassBtn(
+                  text: _flow.isPlaying ? '⏸ PAUSE' : '▶ PLAY',
+                  textColor: const Color(0xFFFFEB3B),
+                  onTap: () => _flow.togglePlayPause(),
                 ),
-                Text(
-                  _formatTime(_durationMs),
-                  style: const TextStyle(
-                    color: Colors.white54,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
+                const SizedBox(width: 4),
+                _buildConsoleGlassBtn(
+                  text: '⏭ NEXT',
+                  textColor: Colors.white,
+                  onTap: () => _flow.next(),
+                ),
+                const SizedBox(width: 4),
+                _buildConsoleGlassBtn(
+                  text: '⏹ STOP',
+                  textColor: const Color(0xFFFF5252),
+                  onTap: () => _flow.stop(),
+                ),
+                const SizedBox(width: 4),
+                _buildConsoleGlassBtn(
+                  text: '👏 CHEER',
+                  textColor: const Color(0xFFFF80AB),
+                  onTap: () => _audio.playSfx('cheer'),
+                ),
+                const SizedBox(width: 4),
+                _buildConsoleGlassBtn(
+                  text: '★ SCORE',
+                  textColor: const Color(0xFFFFD700),
+                  onTap: () => _flow.showScore(),
                 ),
               ],
             ),
@@ -721,163 +807,48 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
     );
   }
 
-  // ==========================================
-  // TUNING BAR (Key, Tempo, Cheer)
-  // ==========================================
-  Widget _buildTuningBar() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0C101B).withOpacity(0.85),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          // KEY PITCH CONTROL
-          Row(
-            children: [
-              const Text('KEY', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold, fontSize: 11)),
-              const SizedBox(width: 6),
-              _buildCompactBtn('-', () => _flow.setPitch(_flow.pitch - 1)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  _flow.pitch > 0 ? '+${_flow.pitch}' : '${_flow.pitch}',
-                  style: const TextStyle(color: Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-              ),
-              _buildCompactBtn('+', () => _flow.setPitch(_flow.pitch + 1)),
-            ],
+  Widget _buildConsoleGlassBtn({
+    required String text,
+    required Color textColor,
+    required VoidCallback onTap,
+    VoidCallback? onLongPress,
+    double fontSize = 11,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.08), // bg_glass_btn
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white.withOpacity(0.18)),
           ),
-
-          Container(width: 1, height: 22, color: Colors.white12),
-
-          // TEMPO SPEED CONTROL
-          Row(
-            children: [
-              const Text('TEMPO', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold, fontSize: 11)),
-              const SizedBox(width: 6),
-              _buildCompactBtn('-', () => _flow.setTempo(_flow.tempo - 0.1)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  '${(_flow.tempo * 100).toInt()}%',
-                  style: const TextStyle(color: Color(0xFF9B51E0), fontWeight: FontWeight.bold, fontSize: 12),
-                ),
-              ),
-              _buildCompactBtn('+', () => _flow.setTempo(_flow.tempo + 0.1)),
-            ],
-          ),
-
-          Container(width: 1, height: 22, color: Colors.white12),
-
-          // CHEER SFX
-          InkWell(
-            onTap: () => _audio.playSfx('cheer'),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF2A6D).withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFFF2A6D).withOpacity(0.5)),
-              ),
-              child: const Row(
-                children: [
-                  Text('👏', style: TextStyle(fontSize: 12)),
-                  SizedBox(width: 4),
-                  Text('CHEER', style: TextStyle(color: Color(0xFFFF2A6D), fontWeight: FontWeight.bold, fontSize: 10)),
-                ],
-              ),
+          child: Text(
+            text,
+            style: TextStyle(
+              color: textColor,
+              fontSize: fontSize,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  // ==========================================
-  // BOTTOM TRANSPORT CONTROLS
-  // ==========================================
-  Widget _buildTransportControls() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          // Replay
-          IconButton(
-            icon: const Icon(Icons.replay_rounded, color: Colors.white70, size: 24),
-            tooltip: 'Replay Song',
-            onPressed: () => _flow.replay(),
-          ),
-
-          // Play/Pause Main Button
-          InkWell(
-            onTap: () => _flow.togglePlayPause(),
-            borderRadius: BorderRadius.circular(40),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [Color(0xFF00F2FE), Color(0xFF4FACFE)],
-                ),
-              ),
-              child: Icon(
-                _flow.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: Colors.black,
-                size: 28,
-              ),
-            ),
-          ),
-
-          // Stop
-          IconButton(
-            icon: const Icon(Icons.stop_rounded, color: Color(0xFFFF5252), size: 26),
-            tooltip: 'Stop Playback',
-            onPressed: () => _flow.stop(),
-          ),
-
-          // Next Song
-          IconButton(
-            icon: const Icon(Icons.skip_next_rounded, color: Color(0xFF00F2FE), size: 28),
-            tooltip: 'Next Reserved Song',
-            onPressed: () => _flow.next(),
-          ),
-
-          // RSV List Button (Quick Queue Sheet)
-          InkWell(
-            onTap: _showReservedSongsSheet,
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.queue_music_rounded, color: Color(0xFFFFD700), size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    'RSV (${_flow.queue.length})',
-                    style: const TextStyle(
-                      color: Color(0xFFFFD700),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+  Widget _buildConsoleDivider() {
+    return Container(
+      width: 1,
+      height: 18,
+      margin: const EdgeInsets.symmetric(horizontal: 5),
+      color: const Color(0x33FFFFFF), // 33FFFFFF from native layout
     );
   }
 
