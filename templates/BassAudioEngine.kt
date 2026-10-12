@@ -122,7 +122,7 @@ class BassAudioEngine(private val context: Context) {
             }
 
             // Set 512 polyphony voices
-            BASS.BASS_ChannelSetAttribute(streamHandle, BASS.BASS_ATTRIB_MIDI_VOICES, polyphony.toFloat())
+            BASS.BASS_ChannelSetAttribute(streamHandle, BASSMIDI.BASS_ATTRIB_MIDI_VOICES, polyphony.toFloat())
 
             // Spatial Reverb & Chorus
             BASS.BASS_ChannelSetAttribute(streamHandle, BASSMIDI.BASS_ATTRIB_MIDI_REVERB, reverb)
