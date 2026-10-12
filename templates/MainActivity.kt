@@ -92,6 +92,9 @@ class MainActivity: FlutterActivity() {
         try { bassEngine?.release() } catch (_: Throwable) {}
         try { mediaPlayer?.release() } catch (_: Throwable) {}
         try { sfxPlayer?.release() } catch (_: Throwable) {}
+        bassEngine = null
+        mediaPlayer = null
+        sfxPlayer = null
         super.onDestroy()
     }
 
@@ -812,13 +815,5 @@ class MainActivity: FlutterActivity() {
                 mediaPlayer?.playbackParams = params
             }
         } catch (_: Exception) {}
-    }
-
-    override fun onDestroy() {
-        mediaPlayer?.release()
-        mediaPlayer = null
-        sfxPlayer?.release()
-        sfxPlayer = null
-        super.onDestroy()
     }
 }
