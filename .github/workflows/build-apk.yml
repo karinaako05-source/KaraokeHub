@@ -54,18 +54,22 @@ jobs:
             sed -i 's/isShrinkResources = true/isShrinkResources = false/' android/app/build.gradle.kts || true
           fi
 
-          # 2. Place MainActivity.kt and SoundFontSynth.kt in the exact directory matching package com.karaokehub.next
+          # 2. Place MainActivity.kt and BassAudioEngine.kt in directory matching package com.karaokehub.next
           rm -rf android/app/src/main/kotlin/com/karaokehub/karaokehub_next
           mkdir -p android/app/src/main/kotlin/com/karaokehub/next
           cp templates/MainActivity.kt android/app/src/main/kotlin/com/karaokehub/next/MainActivity.kt
-          cp templates/SoundFontSynth.kt android/app/src/main/kotlin/com/karaokehub/next/SoundFontSynth.kt
+          cp templates/BassAudioEngine.kt android/app/src/main/kotlin/com/karaokehub/next/BassAudioEngine.kt
 
-          # 3. Copy Native C++ SoundFont synthesizer source and configure CMake
-          mkdir -p android/app/src/main/cpp
-          cp templates/cpp/* android/app/src/main/cpp/
+          # 3. Place BASS Java wrapper classes in com/un4seen/bass
+          mkdir -p android/app/src/main/java/com/un4seen/bass
+          cp templates/java/com/un4seen/bass/* android/app/src/main/java/com/un4seen/bass/
+
+          # 4. Copy BASS native shared libraries (.so) into jniLibs
+          mkdir -p android/app/src/main/jniLibs
+          cp -r native_libs/* android/app/src/main/jniLibs/
           python3 templates/patch_gradle.py
 
-          # 4. Add storage and network permissions to AndroidManifest.xml
+          # 5. Add storage and network permissions to AndroidManifest.xml
           MANIFEST_FILE="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST_FILE" ]; then
             sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>' "$MANIFEST_FILE"

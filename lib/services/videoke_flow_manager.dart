@@ -88,8 +88,8 @@ class VideokeFlowManager extends ChangeNotifier {
       }
     }
 
-    // If machine is totally idle (no song loaded), automatically play first reserved song
-    if (_currentSong == null) {
+    // If machine is totally idle (no song loaded and not scoring), automatically play first reserved song
+    if (_currentSong == null && !_isScoring) {
       await next();
     } else {
       notifyListeners();
@@ -200,15 +200,26 @@ class VideokeFlowManager extends ChangeNotifier {
   }
 
   void showScore() {
-    _handleSongEnded();
+    _handleSongEnded(force: true);
   }
 
-  void _handleSongEnded() async {
+  void _handleSongEnded({bool force = false}) async {
+    if (_isScoring || _currentSong == null) return;
+
+    if (!force) {
+      // Guard against false premature 0ms triggers
+      final posMs = await _audio.getPosition();
+      final durMs = await _audio.getDuration();
+      if (durMs > 10000 && posMs < 3000) {
+        return;
+      }
+    }
+
+    _isScoring = true;
     // Generate authentic videoke score (85 - 100)
     final random = Random();
     final score = 85 + random.nextInt(16); // 85 to 100
     _lastScore = score;
-    _isScoring = true;
     notifyListeners();
 
     // Play corresponding fanfare SFX

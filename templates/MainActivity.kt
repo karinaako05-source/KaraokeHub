@@ -32,8 +32,8 @@ class MainActivity: FlutterActivity() {
     private var currentPitch: Float = 1.0f
     private var currentTempo: Float = 1.0f
     private var lastExtractedLyrics: List<Map<String, Any>> = emptyList()
-    private var sfSynth: SoundFontSynth? = null
-    private var isUsingSfSynth: Boolean = false
+    private var bassEngine: BassAudioEngine? = null
+    private var isUsingBassEngine: Boolean = false
     private var soundFontLoadedPath: String? = null
 
     // 256-bit AES Key and 128-bit IV for MKMD slices from shubblob
@@ -61,6 +61,17 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun loadSoundFont(targetPath: String? = null): Boolean {
+        if (bassEngine == null) {
+            bassEngine = BassAudioEngine(this).apply {
+                onSongEnded = {
+                    runOnUiThread {
+                        methodChannel?.invokeMethod("onSongEnded", null)
+                    }
+                }
+            }
+        }
+        val engine = bassEngine ?: return false
+
         val pathsToTry = mutableListOf<String>()
         if (!targetPath.isNullOrEmpty()) {
             pathsToTry.add(targetPath)
@@ -90,22 +101,9 @@ class MainActivity: FlutterActivity() {
             try {
                 val f = File(p)
                 if (f.exists() && f.length() > 0) {
-                    val synth = SoundFontSynth()
-                    var ok = synth.initFromFile(f.absolutePath)
-                    if (!ok) {
-                        try {
-                            ok = synth.init(f.readBytes())
-                        } catch (_: OutOfMemoryError) {}
-                    }
+                    val ok = engine.loadSoundFont(f.absolutePath)
                     if (ok) {
-                        try { sfSynth?.release() } catch (_: Throwable) {}
-                        sfSynth = synth
                         soundFontLoadedPath = f.absolutePath
-                        sfSynth?.onComplete = {
-                            runOnUiThread {
-                                methodChannel?.invokeMethod("onSongEnded", null)
-                            }
-                        }
                         return true
                     }
                 }
@@ -115,7 +113,7 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun initSoundFont() {
-        if (sfSynth != null && sfSynth?.isReady() == true) return
+        if (bassEngine != null && bassEngine?.isReady() == true) return
         loadSoundFont()
     }
 
@@ -297,30 +295,32 @@ class MainActivity: FlutterActivity() {
 
                             val midiFile = extractAndDecryptSlice(resolvedBlobPath, sectorOffset, sectorLength)
                             if (midiFile != null && midiFile.exists()) {
-                                if (sfSynth == null || sfSynth?.isReady() != true) {
+                                if (bassEngine == null || bassEngine?.isReady() != true) {
                                     initSoundFont()
                                 }
-                                if (sfSynth != null && sfSynth?.isReady() == true) {
+                                if (bassEngine != null && bassEngine?.isReady() == true) {
                                     mediaPlayer?.release()
                                     mediaPlayer = null
-                                    sfSynth?.loadMidi(midiFile.readBytes())
-                                    isUsingSfSynth = true
-                                    methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
-                                    result.success(true)
-                                } else {
-                                    isUsingSfSynth = false
-                                    mediaPlayer?.release()
-                                    mediaPlayer = MediaPlayer().apply {
-                                        setDataSource(midiFile.absolutePath)
-                                        prepare()
-                                        applyPlaybackParams()
-                                        setOnCompletionListener {
-                                            methodChannel?.invokeMethod("onSongEnded", null)
-                                        }
+                                    val ok = bassEngine!!.loadMidi(midiFile.readBytes())
+                                    if (ok) {
+                                        isUsingBassEngine = true
+                                        methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
+                                        result.success(true)
+                                        return@setMethodCallHandler
                                     }
-                                    methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
-                                    result.success(true)
                                 }
+                                isUsingBassEngine = false
+                                mediaPlayer?.release()
+                                mediaPlayer = MediaPlayer().apply {
+                                    setDataSource(midiFile.absolutePath)
+                                    prepare()
+                                    applyPlaybackParams()
+                                    setOnCompletionListener {
+                                        methodChannel?.invokeMethod("onSongEnded", null)
+                                    }
+                                }
+                                methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
+                                result.success(true)
                             } else {
                                 result.success(false)
                             }
@@ -330,8 +330,8 @@ class MainActivity: FlutterActivity() {
                     }
                     "play" -> {
                         try {
-                            if (isUsingSfSynth) {
-                                sfSynth?.play()
+                            if (isUsingBassEngine) {
+                                bassEngine?.play()
                                 result.success(true)
                             } else {
                                 mediaPlayer?.start()
@@ -343,8 +343,8 @@ class MainActivity: FlutterActivity() {
                     }
                     "pause" -> {
                         try {
-                            if (isUsingSfSynth) {
-                                sfSynth?.pause()
+                            if (isUsingBassEngine) {
+                                bassEngine?.pause()
                                 result.success(true)
                             } else {
                                 mediaPlayer?.pause()
@@ -356,8 +356,8 @@ class MainActivity: FlutterActivity() {
                     }
                     "stop" -> {
                         try {
-                            if (isUsingSfSynth) {
-                                sfSynth?.stop()
+                            if (isUsingBassEngine) {
+                                bassEngine?.stop()
                                 result.success(true)
                             } else {
                                 mediaPlayer?.stop()
@@ -370,8 +370,8 @@ class MainActivity: FlutterActivity() {
                     "seekTo" -> {
                         val positionMs = call.argument<Int>("positionMs") ?: 0
                         try {
-                            if (isUsingSfSynth) {
-                                sfSynth?.seekMs(positionMs)
+                            if (isUsingBassEngine) {
+                                bassEngine?.seekTo(positionMs.toLong())
                                 result.success(true)
                             } else {
                                 mediaPlayer?.seekTo(positionMs)
@@ -383,8 +383,8 @@ class MainActivity: FlutterActivity() {
                     }
                     "getPosition" -> {
                         try {
-                            if (isUsingSfSynth) {
-                                result.success(sfSynth?.currentMs() ?: 0)
+                            if (isUsingBassEngine) {
+                                result.success(bassEngine?.getPositionMs() ?: 0L)
                             } else {
                                 result.success(mediaPlayer?.currentPosition ?: 0)
                             }
@@ -394,8 +394,8 @@ class MainActivity: FlutterActivity() {
                     }
                     "getDuration" -> {
                         try {
-                            if (isUsingSfSynth) {
-                                result.success(sfSynth?.durationMs() ?: 0)
+                            if (isUsingBassEngine) {
+                                result.success(bassEngine?.getDurationMs() ?: 0L)
                             } else {
                                 result.success(mediaPlayer?.duration ?: 0)
                             }
@@ -405,8 +405,8 @@ class MainActivity: FlutterActivity() {
                     }
                     "getSynthStatus" -> {
                         result.success(mapOf(
-                            "soundfontActive" to (sfSynth?.isReady() == true),
-                            "soundfontPath" to (soundFontLoadedPath ?: "Android Native Sonivox Synth")
+                            "soundfontActive" to (bassEngine?.isReady() == true),
+                            "soundfontPath" to (soundFontLoadedPath ?: "BASSMIDI Professional Audio Engine")
                         ))
                     }
                     "setSoundFont" -> {
@@ -419,12 +419,18 @@ class MainActivity: FlutterActivity() {
                     }
                     "setPitch" -> {
                         val semitones = call.argument<Int>("semitones") ?: 0
+                        if (isUsingBassEngine) {
+                            bassEngine?.setKeyOffset(semitones)
+                        }
                         currentPitch = Math.pow(2.0, semitones / 12.0).toFloat().coerceIn(0.5f, 2.0f)
                         applyPlaybackParams()
                         result.success(true)
                     }
                     "setTempo" -> {
                         val rate = call.argument<Double>("rate") ?: 1.0
+                        if (isUsingBassEngine) {
+                            bassEngine?.setTempoRate(rate.toFloat())
+                        }
                         currentTempo = rate.toFloat().coerceIn(0.5f, 2.0f)
                         applyPlaybackParams()
                         result.success(true)
