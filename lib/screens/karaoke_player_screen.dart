@@ -46,6 +46,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   void initState() {
     super.initState();
     _flow.addListener(_onFlowChanged);
+    _catalog.addListener(_onFlowChanged);
+    if (_catalog.songs.length <= 3) {
+      _catalog.reloadCatalog();
+    }
     _initBgv();
 
     // If song was passed and nothing is playing, play it
@@ -177,6 +181,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   @override
   void dispose() {
     _flow.removeListener(_onFlowChanged);
+    _catalog.removeListener(_onFlowChanged);
     _playbackTimer?.cancel();
     _bgvController?.dispose();
     super.dispose();
@@ -1084,9 +1089,76 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   // ==========================================
   // AUTHENTIC VIDEOKE DIALPAD / KEYPAD MODAL
   // ==========================================
+  SongItem? _findSongFromKeypad(String digits) {
+    final clean = digits.trim();
+    if (clean.isEmpty) return null;
+
+    // 1. Exact string match
+    for (final s in _catalog.songs) {
+      if (s.code == clean) return s;
+    }
+
+    // 2. Numeric equality (e.g. typing "2482" matches "02482", typing "1" matches "00001")
+    final qInt = int.tryParse(clean);
+    if (qInt != null) {
+      final padded = clean.padLeft(5, '0');
+      for (final s in _catalog.songs) {
+        if (s.code == padded) return s;
+        final cInt = int.tryParse(s.code);
+        if (cInt != null && cInt == qInt) return s;
+      }
+    }
+
+    // 3. Prefix match on song code
+    for (final s in _catalog.songs) {
+      if (s.code.startsWith(clean)) return s;
+    }
+
+    // 4. Prefix match on numeric code without leading zeroes
+    if (qInt != null) {
+      final qStr = qInt.toString();
+      for (final s in _catalog.songs) {
+        final cInt = int.tryParse(s.code);
+        if (cInt != null && cInt.toString().startsWith(qStr)) return s;
+      }
+    }
+
+    return null;
+  }
+
+  List<SongItem> _findCandidatesFromKeypad(String digits) {
+    final clean = digits.trim();
+    if (clean.isEmpty) return [];
+    final qInt = int.tryParse(clean);
+    final qStr = qInt?.toString() ?? clean;
+    final padded = clean.padLeft(5, '0');
+
+    final results = <SongItem>[];
+    for (final s in _catalog.songs) {
+      if (s.code == clean || s.code == padded) {
+        results.insert(0, s);
+      } else if (s.code.startsWith(clean)) {
+        results.add(s);
+      } else if (qInt != null) {
+        final cInt = int.tryParse(s.code);
+        if (cInt != null && cInt.toString().startsWith(qStr)) {
+          results.add(s);
+        }
+      }
+      if (results.length >= 8) break;
+    }
+    return results;
+  }
+
   void _showKeypadDialog() {
     String enteredDigits = "";
     SongItem? matchedSong;
+    List<SongItem> candidates = [];
+
+    // Ensure catalog is populated
+    if (_catalog.songs.length <= 3) {
+      _catalog.reloadCatalog();
+    }
 
     showDialog(
       context: context,
@@ -1096,9 +1168,8 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
             void updateInput(String digit) {
               if (enteredDigits.length < 6) {
                 enteredDigits += digit;
-                // Live match in catalog
-                final found = _catalog.songs.where((s) => s.code == enteredDigits).toList();
-                matchedSong = found.isNotEmpty ? found.first : null;
+                matchedSong = _findSongFromKeypad(enteredDigits);
+                candidates = _findCandidatesFromKeypad(enteredDigits);
                 setKeypadState(() {});
               }
             }
@@ -1106,8 +1177,8 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
             void backspace() {
               if (enteredDigits.isNotEmpty) {
                 enteredDigits = enteredDigits.substring(0, enteredDigits.length - 1);
-                final found = _catalog.songs.where((s) => s.code == enteredDigits).toList();
-                matchedSong = found.isNotEmpty ? found.first : null;
+                matchedSong = _findSongFromKeypad(enteredDigits);
+                candidates = _findCandidatesFromKeypad(enteredDigits);
                 setKeypadState(() {});
               }
             }
@@ -1115,6 +1186,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
             void clearAll() {
               enteredDigits = "";
               matchedSong = null;
+              candidates = [];
               setKeypadState(() {});
             }
 
@@ -1130,19 +1202,33 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Header
+                    // Header with catalog song count
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          '🔢 SELECT SONG NUMBER',
-                          style: TextStyle(
-                            color: Color(0xFFFF9100),
-                            fontWeight: FontWeight.w900,
-                            fontSize: 15,
-                            letterSpacing: 1.2,
+                        Expanded(
+                          child: Text(
+                            '🔢 SELECT SONG NUMBER (${_catalog.songs.length})',
+                            style: const TextStyle(
+                              color: Color(0xFFFF9100),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 14,
+                              letterSpacing: 1.0,
+                            ),
                           ),
                         ),
+                        if (_catalog.songs.length <= 3)
+                          IconButton(
+                            icon: const Icon(Icons.sync_rounded, color: Color(0xFF00F2FE), size: 18),
+                            tooltip: 'Reload Catalog',
+                            onPressed: () async {
+                              await _catalog.reloadCatalog();
+                              setKeypadState(() {
+                                matchedSong = _findSongFromKeypad(enteredDigits);
+                                candidates = _findCandidatesFromKeypad(enteredDigits);
+                              });
+                            },
+                          ),
                         IconButton(
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
@@ -1156,7 +1242,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                     // Number Display Screen
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
                         color: Colors.black,
                         borderRadius: BorderRadius.circular(12),
@@ -1164,49 +1250,142 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                       ),
                       alignment: Alignment.center,
                       child: Text(
-                        enteredDigits.isEmpty ? "0 0 0 0 0" : enteredDigits.split('').join(' '),
+                        enteredDigits.isEmpty ? "_ _ _ _ _" : enteredDigits,
                         style: TextStyle(
                           color: enteredDigits.isEmpty ? Colors.white24 : const Color(0xFFFFD700),
-                          fontSize: 28,
+                          fontSize: 26,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 3,
+                          letterSpacing: 4,
                         ),
                       ),
                     ),
                     const SizedBox(height: 8),
 
-                    // Live Matched Song Preview
+                    // Live Matched Song Preview Box
                     Container(
-                      height: 50,
+                      height: 56,
                       width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                       alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: matchedSong != null ? const Color(0xFF002230) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        border: matchedSong != null ? Border.all(color: const Color(0xFF00F2FE).withOpacity(0.5)) : null,
+                      ),
                       child: matchedSong != null
                           ? Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  matchedSong!.title.toUpperCase(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Color(0xFF00F2FE),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFD700),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        matchedSong!.code,
+                                        style: const TextStyle(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        matchedSong!.title.toUpperCase(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF00F2FE),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                                const SizedBox(height: 2),
                                 Text(
                                   matchedSong!.artist,
-                                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 11),
                                 ),
                               ],
                             )
-                          : Text(
-                              enteredDigits.isEmpty
-                                  ? 'Enter 5-digit song code'
-                                  : 'Searching catalog...',
-                              style: const TextStyle(color: Colors.white30, fontSize: 12),
+                          : Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  enteredDigits.isEmpty
+                                      ? 'Type song number (e.g. 20554, 2482, 1)'
+                                      : 'No match for code "$enteredDigits"',
+                                  style: TextStyle(
+                                    color: enteredDigits.isEmpty ? Colors.white38 : const Color(0xFFFF5252),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (enteredDigits.isNotEmpty)
+                                  InkWell(
+                                    onTap: () {
+                                      Navigator.of(context).pop();
+                                      _showSearchAndReserveDialog();
+                                    },
+                                    child: const Text(
+                                      'Click here to Search by Title / Artist',
+                                      style: TextStyle(color: Color(0xFF00F2FE), fontSize: 11, decoration: TextDecoration.underline),
+                                    ),
+                                  ),
+                              ],
                             ),
                     ),
+
+                    // Candidate matches bar (if user typed partial code)
+                    if (candidates.length > 1) ...[
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 28,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: candidates.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 6),
+                          itemBuilder: (context, idx) {
+                            final c = candidates[idx];
+                            final isSelected = c.code == matchedSong?.code;
+                            return InkWell(
+                              onTap: () {
+                                setKeypadState(() {
+                                  enteredDigits = c.code;
+                                  matchedSong = c;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? const Color(0xFF00F2FE) : const Color(0xFF161F30),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: isSelected ? Colors.white : Colors.white24),
+                                ),
+                                child: Text(
+                                  '[${c.code}] ${c.title}',
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.black : Colors.white70,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
 
                     // 4x3 Arcade Dialpad Grid
