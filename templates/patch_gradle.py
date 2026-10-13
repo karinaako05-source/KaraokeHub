@@ -9,9 +9,9 @@ PROGUARD_RULES = """
 -keep class com.un4seen.bass.** { *; }
 -keepclassmembers class com.un4seen.bass.** { *; }
 
-# Keep SongHub NativeLib JNI bindings
--keep class com.songhub.android.database.** { *; }
--keepclassmembers class com.songhub.android.database.** { *; }
+# Keep KaraokeHub NativeLib JNI bindings
+-keep class com.karaokehub.next.database.** { *; }
+-keepclassmembers class com.karaokehub.next.database.** { *; }
 
 # Keep KaraokeHub Next native activity and engine
 -keep class com.karaokehub.next.** { *; }

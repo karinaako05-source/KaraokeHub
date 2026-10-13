@@ -28,7 +28,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.spec.IvParameterSpec
 import android.util.Log
-import com.songhub.android.database.NativeLib
+import com.karaokehub.next.database.NativeLib
 
 @Keep
 class MainActivity: FlutterActivity() {
@@ -587,7 +587,7 @@ class MainActivity: FlutterActivity() {
 
         var midiBytes: ByteArray? = null
         if (isMkmd || !isMthd) {
-            // 1:1 Original SongHub decryption via libMewtwo.so
+            // Native MIDI decryption via libKhNext.so
             try {
                 midiBytes = NativeLib.processMidiData(chunk, false)
             } catch (t: Throwable) {

@@ -1,4 +1,4 @@
-package com.songhub.android.database
+package com.karaokehub.next.database
 
 import androidx.annotation.Keep
 
@@ -7,7 +7,7 @@ object NativeLib {
     init {
         try {
             System.loadLibrary("c++_shared")
-            System.loadLibrary("Mewtwo")
+            System.loadLibrary("KhNext")
         } catch (t: Throwable) {
             t.printStackTrace()
         }
