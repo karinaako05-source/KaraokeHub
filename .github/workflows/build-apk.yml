@@ -71,6 +71,10 @@ jobs:
           cp templates/MainActivity.kt android/app/src/main/kotlin/com/karaokehub/next/MainActivity.kt
           cp templates/BassAudioEngine.kt android/app/src/main/kotlin/com/karaokehub/next/BassAudioEngine.kt
 
+          # 2b. Place NativeLib.kt in package com.songhub.android.database for libMewtwo.so binding
+          mkdir -p android/app/src/main/kotlin/com/songhub/android/database
+          cp templates/kotlin/com/songhub/android/database/NativeLib.kt android/app/src/main/kotlin/com/songhub/android/database/NativeLib.kt
+
           # 3. Place BASS Java wrapper classes in com/un4seen/bass
           mkdir -p android/app/src/main/java/com/un4seen/bass
           cp templates/java/com/un4seen/bass/* android/app/src/main/java/com/un4seen/bass/

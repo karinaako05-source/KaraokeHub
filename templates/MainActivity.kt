@@ -23,6 +23,8 @@ import java.util.zip.Inflater
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.spec.IvParameterSpec
+import android.util.Log
+import com.songhub.android.database.NativeLib
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.karaokehub.next/audio_engine"
@@ -348,17 +350,26 @@ class MainActivity: FlutterActivity() {
                                     }
                                 }
                                 isUsingBassEngine = false
-                                mediaPlayer?.release()
-                                mediaPlayer = MediaPlayer().apply {
-                                    setDataSource(midiFile.absolutePath)
-                                    prepare()
-                                    applyPlaybackParams()
-                                    setOnCompletionListener {
-                                        methodChannel?.invokeMethod("onSongEnded", null)
+                                try {
+                                    mediaPlayer?.release()
+                                    mediaPlayer = MediaPlayer().apply {
+                                        setDataSource(midiFile.absolutePath)
+                                        prepare()
+                                        applyPlaybackParams()
+                                        setOnCompletionListener {
+                                            runOnUiThread {
+                                                methodChannel?.invokeMethod("onSongEnded", null)
+                                            }
+                                        }
                                     }
+                                    methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
+                                    result.success(true)
+                                } catch (e: Exception) {
+                                    Log.e("MainActivity", "MediaPlayer fallback failed", e)
+                                    mediaPlayer?.release()
+                                    mediaPlayer = null
+                                    result.success(false)
                                 }
-                                methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
-                                result.success(true)
                             } else {
                                 result.success(false)
                             }
@@ -374,12 +385,18 @@ class MainActivity: FlutterActivity() {
                                     startPlaybackWatcher()
                                     result.success(true)
                                 } else {
-                                    mediaPlayer?.start()
-                                    result.success(true)
+                                    val mpStarted = try {
+                                        mediaPlayer?.start()
+                                        true
+                                    } catch (_: Throwable) { false }
+                                    result.success(mpStarted)
                                 }
                             } else {
-                                mediaPlayer?.start()
-                                result.success(true)
+                                val mpStarted = try {
+                                    mediaPlayer?.start()
+                                    true
+                                } catch (_: Throwable) { false }
+                                result.success(mpStarted)
                             }
                         } catch (e: Exception) {
                             result.success(false)
@@ -522,68 +539,89 @@ class MainActivity: FlutterActivity() {
         val byteOffset = offsetSectors.toLong() * sectorSize
         val byteLength = lengthSectors.toLong() * sectorSize
 
+        if (byteOffset < 0 || byteLength <= 0 || byteOffset + byteLength > blobFile.length()) {
+            Log.e("MainActivity", "Slice out of bounds: offset=$byteOffset length=$byteLength blobSize=${blobFile.length()}")
+            return null
+        }
+
         val chunk = ByteArray(byteLength.toInt())
         RandomAccessFile(blobFile, "r").use { raf ->
             raf.seek(byteOffset)
             raf.readFully(chunk)
         }
 
-        // Check if starts with MKMD
-        if (chunk.size >= 13 &&
-            chunk[0] == 'M'.code.toByte() &&
-            chunk[1] == 'K'.code.toByte() &&
-            chunk[2] == 'M'.code.toByte() &&
-            chunk[3] == 'D'.code.toByte()) {
+        val isMkmd = chunk.size >= 4 &&
+                chunk[0] == 0x4D.toByte() &&
+                chunk[1] == 0x4B.toByte() &&
+                chunk[2] == 0x4D.toByte() &&
+                chunk[3] == 0x44.toByte()
+        val isMthd = chunk.size >= 4 &&
+                chunk[0] == 'M'.code.toByte() &&
+                chunk[1] == 'T'.code.toByte() &&
+                chunk[2] == 'h'.code.toByte() &&
+                chunk[3] == 'd'.code.toByte()
 
-            val encLen = (chunk[9].toInt() and 0xff) or
-                         ((chunk[10].toInt() and 0xff) shl 8) or
-                         ((chunk[11].toInt() and 0xff) shl 16) or
-                         ((chunk[12].toInt() and 0xff) shl 24)
-
-            val sliceLen = (encLen + 15) and 15.inv()
-            val cipherText = ByteArray(sliceLen)
-            System.arraycopy(chunk, 13, cipherText, 0, sliceLen.coerceAtMost(chunk.size - 13))
-
-            // AES-256-CBC Decryption
-            val keySpec = SecretKeySpec(AES_KEY, "AES")
-            val ivSpec = IvParameterSpec(AES_IV)
-            val cipher = Cipher.getInstance("AES/CBC/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
-            val decrypted = cipher.doFinal(cipherText)
-
-            // Raw Deflate Inflate
-            val inflater = Inflater(true)
-            inflater.setInput(decrypted, 0, encLen.coerceAtMost(decrypted.size))
-
-            val bos = ByteArrayOutputStream()
-            val buffer = ByteArray(4096)
-            while (!inflater.finished()) {
-                val count = inflater.inflate(buffer)
-                if (count == 0 && inflater.needsInput()) break
-                bos.write(buffer, 0, count)
-            }
-            inflater.end()
-
-            val midiBytes = bos.toByteArray()
+        var midiBytes: ByteArray? = null
+        if (isMkmd || !isMthd) {
+            // 1:1 Original SongHub decryption via libMewtwo.so
             try {
-                lastExtractedLyrics = parseMidiLyrics(midiBytes)
-            } catch (_: Exception) {
-                lastExtractedLyrics = emptyList()
+                midiBytes = NativeLib.processMidiData(chunk, false)
+            } catch (t: Throwable) {
+                Log.e("MainActivity", "NativeLib.processMidiData error: ${t.message}", t)
             }
-            val outFile = File(cacheDir, "current_song.mid")
-            outFile.writeBytes(midiBytes)
-            return outFile
         } else {
-            // Already standard MIDI or audio
-            try {
-                lastExtractedLyrics = parseMidiLyrics(chunk)
-            } catch (_: Exception) {
-                lastExtractedLyrics = emptyList()
-            }
-            val outFile = File(cacheDir, "current_song.mid")
-            outFile.writeBytes(chunk)
-            return outFile
+            midiBytes = chunk
         }
+
+        // Fallback to AES/Inflater if NativeLib returned null
+        if (midiBytes == null && isMkmd && chunk.size >= 13) {
+            try {
+                val encLen = (chunk[9].toInt() and 0xff) or
+                        ((chunk[10].toInt() and 0xff) shl 8) or
+                        ((chunk[11].toInt() and 0xff) shl 16) or
+                        ((chunk[12].toInt() and 0xff) shl 24)
+
+                val sliceLen = (encLen + 15) and 15.inv()
+                val cipherText = ByteArray(sliceLen)
+                System.arraycopy(chunk, 13, cipherText, 0, sliceLen.coerceAtMost(chunk.size - 13))
+
+                val keySpec = SecretKeySpec(AES_KEY, "AES")
+                val ivSpec = IvParameterSpec(AES_IV)
+                val cipher = Cipher.getInstance("AES/CBC/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
+                val decrypted = cipher.doFinal(cipherText)
+
+                val inflater = Inflater(true)
+                inflater.setInput(decrypted, 0, encLen.coerceAtMost(decrypted.size))
+
+                val bos = ByteArrayOutputStream()
+                val buffer = ByteArray(4096)
+                while (!inflater.finished()) {
+                    val count = inflater.inflate(buffer)
+                    if (count == 0 && inflater.needsInput()) break
+                    bos.write(buffer, 0, count)
+                }
+                inflater.end()
+                midiBytes = bos.toByteArray()
+            } catch (e: Throwable) {
+                Log.w("MainActivity", "AES fallback decode error: ${e.message}")
+            }
+        }
+
+        if (midiBytes == null || midiBytes.isEmpty()) {
+            Log.e("MainActivity", "Failed to obtain decrypted MIDI for slice offset=$offsetSectors")
+            return null
+        }
+
+        try {
+            lastExtractedLyrics = parseMidiLyrics(midiBytes)
+        } catch (_: Exception) {
+            lastExtractedLyrics = emptyList()
+        }
+        val outFile = File(cacheDir, "current_song.mid")
+        outFile.writeBytes(midiBytes)
+        return outFile
+    }
     }
 
     private fun parseMidiLyrics(midi: ByteArray): List<Map<String, Any>> {

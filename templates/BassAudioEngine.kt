@@ -103,7 +103,10 @@ class BassAudioEngine(private val context: Context) {
         if (!file.exists() || file.length() <= 0L) return false
 
         return try {
-            val loaded = BASSMIDI.BASS_MIDI_FontInit(path, 131072)
+            var loaded = BASSMIDI.BASS_MIDI_FontInit(path, 0)
+            if (loaded == 0) {
+                loaded = BASSMIDI.BASS_MIDI_FontInit(path, 131072)
+            }
             if (loaded == 0) {
                 Log.w(TAG, "BASS_MIDI_FontInit failed for $path with code: ${BASS.BASS_ErrorGetCode()}")
                 return false

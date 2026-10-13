@@ -141,16 +141,23 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   }
 
   void _loadBgvVideo(String path) {
-    _bgvController?.dispose();
-    _bgvController = VideoPlayerController.file(File(path))
-      ..initialize().then((_) {
-        if (mounted) {
-          _bgvController?.setLooping(true);
-          _bgvController?.setVolume(0.0); // Muted background video
-          _bgvController?.play();
+    try {
+      _bgvController?.dispose();
+      final controller = VideoPlayerController.file(File(path));
+      _bgvController = controller;
+      controller.initialize().then((_) {
+        if (mounted && _bgvController == controller) {
+          controller.setLooping(true);
+          controller.setVolume(0.0); // Muted background video
+          controller.play();
           setState(() {});
         }
+      }).catchError((err) {
+        debugPrint('BGV video init error: $err');
       });
+    } catch (e) {
+      debugPrint('BGV file load error: $e');
+    }
   }
 
   void _cycleNextBgv() {
