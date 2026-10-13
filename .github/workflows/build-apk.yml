@@ -54,6 +54,17 @@ jobs:
             sed -i 's/isShrinkResources = true/isShrinkResources = false/' android/app/build.gradle.kts || true
           fi
 
+          # Use pre-installed NDK to avoid downloading 1GB NDK 28 during build
+          NDK_BASE="${ANDROID_HOME:-/usr/local/lib/android/sdk}/ndk"
+          if [ -d "$NDK_BASE" ]; then
+            LOCAL_NDK=$(ls "$NDK_BASE" | sort -V | tail -n 1)
+            if [ -n "$LOCAL_NDK" ]; then
+              echo "Using installed Android NDK: $LOCAL_NDK"
+              sed -i "s/ndkVersion = .*/ndkVersion = \"$LOCAL_NDK\"/" android/app/build.gradle.kts 2>/dev/null || true
+              sed -i "s/ndkVersion .*/ndkVersion \"$LOCAL_NDK\"/" android/app/build.gradle 2>/dev/null || true
+            fi
+          fi
+
           # 2. Place MainActivity.kt and BassAudioEngine.kt in directory matching package com.karaokehub.next
           rm -rf android/app/src/main/kotlin/com/karaokehub/karaokehub_next
           mkdir -p android/app/src/main/kotlin/com/karaokehub/next
