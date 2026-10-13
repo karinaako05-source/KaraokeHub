@@ -62,7 +62,9 @@ class BassAudioEngine(private val context: Context) {
         if (streamHandle == 0) return
         BASS.BASS_ChannelSetAttribute(streamHandle, BASSMIDI.BASS_ATTRIB_MIDI_VOICES, polyphony.toFloat())
         BASS.BASS_ChannelSetAttribute(streamHandle, BASSMIDI.BASS_ATTRIB_MIDI_REVERB, effectLevel(reverbSetting) / 100.0f)
-        BASSMIDI.BASS_MIDI_StreamSetFilter(streamHandle, true, effectFilter, null)
+        // Default playback needs no event callback on the audio thread.
+        BASSMIDI.BASS_MIDI_StreamSetFilter(streamHandle, true,
+            if (chorusSetting == 4) null else effectFilter, null)
         BASSMIDI.BASS_MIDI_StreamEvent(streamHandle, 0, BASSMIDI.MIDI_EVENT_CHORUS_LEVEL, effectLevel(chorusSetting))
     }
 
