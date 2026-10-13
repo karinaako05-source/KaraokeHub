@@ -104,8 +104,19 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   void _initBgv() {
     Future.microtask(() async {
       final candidateDirs = [
+        '/sdcard/SongHub/bgv',
+        '/sdcard/SongHub/bgv/3D',
+        '/sdcard/SongHub/bgv/Motion',
+        '/sdcard/SongHub/bgv/Nature',
+        '/storage/emulated/0/SongHub/bgv',
+        '/storage/emulated/0/SongHub/bgv/3D',
+        '/storage/emulated/0/SongHub/bgv/Motion',
+        '/storage/emulated/0/SongHub/bgv/Nature',
         '/sdcard/Download/KaraokeHub/content/bgv',
         '/sdcard/Download/karaokehub/content/bgv',
+        '/sdcard/Download/karaokehub/content/bgv/3D',
+        '/sdcard/Download/karaokehub/content/bgv/Motion',
+        '/sdcard/Download/karaokehub/content/bgv/Nature',
         '/sdcard/Download/KaraokeHub/content/bgv/Nature',
         '/sdcard/Download/KaraokeHub/content/bgv/Motion',
         '/sdcard/Download/KaraokeHub/content/bgv/3D',

@@ -1,10 +1,12 @@
 package com.un4seen.bass;
 
+@androidx.annotation.Keep
 public class BASSMIDI {
     static {
         try { System.loadLibrary("bassmidi"); } catch (Throwable t) {}
     }
 
+    @androidx.annotation.Keep
     public static class BASS_MIDI_DEVICEINFO {
         public BASS_MIDI_DEVICEINFO() {}
         public int flags;
@@ -12,6 +14,7 @@ public class BASSMIDI {
         public java.lang.String name;
     }
 
+    @androidx.annotation.Keep
     public static class BASS_MIDI_EVENT {
         public BASS_MIDI_EVENT() {}
         public int chan;
@@ -21,6 +24,7 @@ public class BASSMIDI {
         public int tick;
     }
 
+    @androidx.annotation.Keep
     public static class BASS_MIDI_FONT {
         public BASS_MIDI_FONT() {}
         public int bank;

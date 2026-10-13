@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
+import androidx.annotation.Keep
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.media.MediaPlayer
@@ -19,6 +20,9 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.RandomAccessFile
 import java.io.ByteArrayOutputStream
+import java.io.StringWriter
+import java.io.PrintWriter
+import java.util.Date
 import java.util.zip.Inflater
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
@@ -26,6 +30,7 @@ import javax.crypto.spec.IvParameterSpec
 import android.util.Log
 import com.songhub.android.database.NativeLib
 
+@Keep
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.karaokehub.next/audio_engine"
     private var mediaPlayer: MediaPlayer? = null
@@ -85,6 +90,19 @@ class MainActivity: FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                try {
+                    val file = File("/sdcard/Download/karaoke_crash.log")
+                    val sw = StringWriter()
+                    val pw = PrintWriter(sw)
+                    throwable.printStackTrace(pw)
+                    file.appendText("\n[${Date()}] [JAVA/KOTLIN UNCAUGHT CRASH - ${thread.name}]\n$sw\n----------------------------------------\n")
+                } catch (_: Throwable) {}
+                defaultHandler?.uncaughtException(thread, throwable)
+            }
+        } catch (_: Throwable) {}
         promptStoragePermissionIfNeeded()
         initSoundFont()
     }
@@ -338,10 +356,16 @@ class MainActivity: FlutterActivity() {
                                 if (bassEngine == null || bassEngine?.isReady() != true) {
                                     initSoundFont()
                                 }
+                                var ok = false
                                 if (bassEngine != null && bassEngine?.isReady() == true) {
-                                    mediaPlayer?.release()
-                                    mediaPlayer = null
-                                    val ok = bassEngine!!.loadMidi(midiFile.readBytes())
+                                    try {
+                                        mediaPlayer?.release()
+                                        mediaPlayer = null
+                                        ok = bassEngine!!.loadMidi(midiFile.readBytes())
+                                    } catch (t: Throwable) {
+                                        Log.e("MainActivity", "BASS loadMidi failed", t)
+                                        ok = false
+                                    }
                                     if (ok) {
                                         isUsingBassEngine = true
                                         methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)

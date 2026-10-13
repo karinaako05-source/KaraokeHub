@@ -2,6 +2,7 @@ package com.karaokehub.next
 
 import android.content.Context
 import android.util.Log
+import androidx.annotation.Keep
 import com.un4seen.bass.BASS
 import com.un4seen.bass.BASSMIDI
 import com.un4seen.bass.BASS_FX
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * memory-volume soundfont flags (0x20000), pitch shift via MIDI_EVENT_TRANSPOSE (65537),
  * and crash-free timer polling (no JNI SYNC callback threading crashes).
  */
+@Keep
 class BassAudioEngine(private val context: Context) {
     companion object {
         private const val TAG = "BassAudioEngine"
@@ -158,8 +160,9 @@ class BassAudioEngine(private val context: Context) {
         if (!isInitialized.get() && !initBass()) return false
 
         return try {
-            val tempFile = File(context.cacheDir, "current_song.mid")
-            FileOutputStream(tempFile).use { it.write(midiBytes) }
+            val tempFile = File.createTempFile("bass_stream_", ".mid", context.cacheDir)
+            tempFile.writeBytes(midiBytes)
+            tempFile.deleteOnExit()
 
             // Flag 8392960 = 0x801100 (BASS_MIDI_DECAYEND | BASS_SAMPLE_FLOAT | BASS_STREAM_AUTOFREE)
             // matching b6/b.java line 252.
@@ -230,7 +233,7 @@ class BassAudioEngine(private val context: Context) {
                 }
                 if (eqHandles[i] != 0) {
                     val eqParam = BASS_FX.BASS_BFX_PEAKEQ().apply {
-                        lBand = i
+                        lBand = 0
                         fBandwidth = 1.0f
                         fQ = 0.0f
                         fCenter = EQ_CENTERS[i]
@@ -312,11 +315,6 @@ class BassAudioEngine(private val context: Context) {
                 BASS.BASS_StreamFree(streamHandle)
             } catch (_: Throwable) {}
             streamHandle = 0
-
-            try {
-                val file = File(context.cacheDir, "current_song.mid")
-                if (file.exists()) file.delete()
-            } catch (_: Throwable) {}
         }
     }
 

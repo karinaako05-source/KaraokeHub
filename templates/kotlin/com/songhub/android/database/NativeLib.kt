@@ -1,5 +1,8 @@
 package com.songhub.android.database
 
+import androidx.annotation.Keep
+
+@Keep
 object NativeLib {
     init {
         try {
@@ -10,9 +13,9 @@ object NativeLib {
         }
     }
 
-    @JvmStatic external fun getDeviceIdHash(id: String): String
-    @JvmStatic external fun isActivated(): Boolean
-    @JvmStatic external fun processMidiData(data: ByteArray, flag: Boolean): ByteArray?
-    @JvmStatic external fun verifyDiagnosticPassword(password: String): Boolean
-    @JvmStatic external fun verifyLicenseKey(key: String, secret: String): Boolean
+    @Keep @JvmStatic external fun getDeviceIdHash(id: String): String
+    @Keep @JvmStatic external fun isActivated(): Boolean
+    @Keep @JvmStatic external fun processMidiData(data: ByteArray, flag: Boolean): ByteArray?
+    @Keep @JvmStatic external fun verifyDiagnosticPassword(password: String): Boolean
+    @Keep @JvmStatic external fun verifyLicenseKey(key: String, secret: String): Boolean
 }

@@ -1,8 +1,33 @@
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'screens/dashboard_screen.dart';
 
+void _logCrash(String type, Object error, StackTrace? stack) {
+  try {
+    final file = File('/sdcard/Download/karaoke_crash.log');
+    final now = DateTime.now().toIso8601String();
+    file.writeAsStringSync(
+      '[$now] [$type]\n$error\n${stack ?? ""}\n----------------------------------------\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+  } catch (_) {}
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (details) {
+    _logCrash('FLUTTER_ERROR', details.exception, details.stack);
+    FlutterError.presentError(details);
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    _logCrash('ASYNC_ERROR', error, stack);
+    return true;
+  };
+
   runApp(const KaraokeHubNextApp());
 }
 

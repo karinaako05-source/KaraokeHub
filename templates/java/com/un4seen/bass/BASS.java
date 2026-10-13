@@ -1,5 +1,6 @@
 package com.un4seen.bass;
 
+@androidx.annotation.Keep
 public class BASS {
     static {
         try { System.loadLibrary("bass"); } catch (Throwable t) {}

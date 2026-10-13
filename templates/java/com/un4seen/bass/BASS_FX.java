@@ -1,10 +1,12 @@
 package com.un4seen.bass;
 
+@androidx.annotation.Keep
 public class BASS_FX {
     static {
         try { System.loadLibrary("bass_fx"); } catch (Throwable t) {}
     }
 
+    @androidx.annotation.Keep
     public static class BASS_BFX_APF {
         public BASS_BFX_APF() {}
         public float fDelay;
