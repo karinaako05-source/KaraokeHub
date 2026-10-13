@@ -622,7 +622,6 @@ class MainActivity: FlutterActivity() {
         outFile.writeBytes(midiBytes)
         return outFile
     }
-    }
 
     private fun parseMidiLyrics(midi: ByteArray): List<Map<String, Any>> {
         if (midi.size < 14) return emptyList()
