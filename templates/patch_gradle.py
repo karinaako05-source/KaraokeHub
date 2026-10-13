@@ -35,10 +35,9 @@ def patch_build_gradle():
     prop_lines = []
     if os.path.exists(gradle_props):
         with open(gradle_props, "r") as f:
-            prop_lines = f.read().splitlines()
-    for p in ["android.enableR8=false", "android.enableR8.fullMode=false"]:
-        if p not in prop_lines:
-            prop_lines.append(p)
+            prop_lines = [line for line in f.read().splitlines() if not line.startswith("android.enableR8=")]
+    if "android.enableR8.fullMode=false" not in prop_lines:
+        prop_lines.append("android.enableR8.fullMode=false")
     with open(gradle_props, "w") as f:
         f.write("\n".join(prop_lines) + "\n")
     print("Patched android/gradle.properties")
@@ -73,7 +72,7 @@ def patch_build_gradle():
         if "signingConfig signingConfigs.debug" in content:
             content = content.replace(
                 "signingConfig signingConfigs.debug",
-                "signingConfig signingConfigs.debug\n            minifyEnabled false\n            shrinkResources false\n            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'"
+                "signingConfig signingConfigs.debug\n            minifyEnabled false\n            shrinkResources false\n            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'"
             )
 
         with open(gradle_file, "w") as f:
@@ -95,7 +94,7 @@ def patch_build_gradle():
         if 'signingConfig = signingConfigs.getByName("debug")' in content:
             content = content.replace(
                 'signingConfig = signingConfigs.getByName("debug")',
-                'signingConfig = signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")'
+                'signingConfig = signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")'
             )
 
         with open(kts_file, "w") as f:
