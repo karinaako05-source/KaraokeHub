@@ -35,7 +35,7 @@ jobs:
       - name: Generate Official Android Platform
         run: |
           flutter config --no-analytics
-          flutter create . --platforms=android --org=com.karaokehub --project-name=karaokehub_next
+          flutter create . --empty --platforms=android --org=com.karaokehub --project-name=karaokehub_next
 
       - name: Configure Android Package ID and Native Bridge
         run: |
@@ -93,6 +93,12 @@ jobs:
 
       - name: Install Project Dependencies
         run: flutter pub get
+
+      - name: Analyze Dart Sources
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Playback Regression Tests
+        run: flutter test
 
       - name: Build Release APK
         run: flutter build apk --release

@@ -42,6 +42,65 @@ class MainActivity: FlutterActivity() {
     private var bassEngine: BassAudioEngine? = null
     private var isUsingBassEngine: Boolean = false
     private var soundFontLoadedPath: String? = null
+    private var playbackSession: Int = 0
+    private var mediaVolume: Float = 1.0f
+    private var midiVolume: Float = 1.0f
+    private var midiPolyphony: Int = 512
+    private var midiReverb: Int = 4
+    private var midiChorus: Int = 4
+
+    private fun publishLyrics() {
+        methodChannel?.invokeMethod("onLyricsLoaded", mapOf(
+            "sessionId" to playbackSession, "lyrics" to lastExtractedLyrics
+        ))
+    }
+
+    private fun reportCompletion(session: Int) {
+        if (session == playbackSession) {
+            methodChannel?.invokeMethod("onSongEnded", mapOf("sessionId" to session))
+        }
+    }
+
+    private fun stopAllPlayback() {
+        stopPlaybackWatcher()
+        try { bassEngine?.stop() } catch (_: Throwable) {}
+        try { mediaPlayer?.release() } catch (_: Throwable) {}
+        try { sfxPlayer?.release() } catch (_: Throwable) {}
+        mediaPlayer = null
+        sfxPlayer = null
+        isUsingBassEngine = false
+        currentPitch = 1.0f
+        currentTempo = 1.0f
+        lastExtractedLyrics = emptyList()
+        publishLyrics()
+    }
+
+    private fun configureBass() {
+        bassEngine?.setMasterVolume(midiVolume)
+        bassEngine?.setEffects(midiPolyphony, midiReverb, midiChorus)
+    }
+
+    private fun prepareMediaPlayer(path: String, session: Int): MediaPlayer {
+        val player = MediaPlayer()
+        try {
+            if (path.startsWith("asset:") || path.startsWith("assets/")) {
+                val assetPath = path.removePrefix("asset:")
+                val key = FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(assetPath)
+                assets.openFd(key).use { descriptor ->
+                    player.setDataSource(descriptor.fileDescriptor, descriptor.startOffset, descriptor.length)
+                }
+            } else {
+                player.setDataSource(path)
+            }
+            player.prepare()
+            player.setVolume(mediaVolume, mediaVolume)
+            player.setOnCompletionListener { reportCompletion(session) }
+            return player
+        } catch (error: Throwable) {
+            player.release()
+            throw error
+        }
+    }
 
     // 256-bit AES Key and 128-bit IV for MKMD slices from shubblob
     private val AES_KEY = byteArrayOf(
@@ -65,11 +124,11 @@ class MainActivity: FlutterActivity() {
     private val playbackWatcherRunnable = object : Runnable {
         override fun run() {
             try {
-                if (isUsingBassEngine && bassEngine?.isPlaying() == true) {
+                if (isUsingBassEngine) {
                     if (bassEngine?.isEnded() == true) {
                         stopPlaybackWatcher()
                         runOnUiThread {
-                            methodChannel?.invokeMethod("onSongEnded", null)
+                            reportCompletion(playbackSession)
                         }
                         return
                     }
@@ -159,6 +218,7 @@ class MainActivity: FlutterActivity() {
             try {
                 val f = File(p)
                 if (f.exists() && f.length() > 0) {
+                    if (engine.isReady() && engine.getLoadedFontPath() == f.absolutePath) return true
                     val ok = engine.loadSoundFont(f.absolutePath)
                     if (ok) {
                         soundFontLoadedPath = f.absolutePath
@@ -292,41 +352,30 @@ class MainActivity: FlutterActivity() {
                     }
                     "loadSong" -> {
                         val path = call.argument<String>("path")
+                        playbackSession = call.argument<Int>("sessionId") ?: 0
+                        stopAllPlayback()
                         try {
-                            mediaPlayer?.release()
-                            mediaPlayer = MediaPlayer().apply {
-                                if (!path.isNullOrEmpty()) {
-                                    if (path.startsWith("asset:") || path.startsWith("assets/")) {
-                                        val assetPath = path.removePrefix("asset:")
-                                        val key = FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(assetPath)
-                                        val afd: AssetFileDescriptor = assets.openFd(key)
-                                        setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                                        afd.close()
-                                    } else {
-                                        setDataSource(path)
-                                    }
-                                    prepare()
-                                    applyPlaybackParams()
-                                    setOnCompletionListener {
-                                        methodChannel?.invokeMethod("onSongEnded", null)
-                                        if (path.endsWith(".mid", true) || path.endsWith(".kar", true)) {
-                                            try {
-                                                val f = File(path)
-                                                if (f.exists()) {
-                                                    lastExtractedLyrics = parseMidiLyrics(f.readBytes())
-                                                }
-                                            } catch (_: Exception) {}
-                                        }
-                                    }
-                                }
+                            require(!path.isNullOrEmpty()) { "Song path is empty" }
+                            if (path.endsWith(".mid", true) || path.endsWith(".kar", true)) {
+                                val bytes = if (path.startsWith("asset:") || path.startsWith("assets/")) {
+                                    val key = FlutterInjector.instance().flutterLoader()
+                                        .getLookupKeyForAsset(path.removePrefix("asset:"))
+                                    assets.open(key).use { it.readBytes() }
+                                } else File(path).readBytes()
+                                lastExtractedLyrics = parseMidiLyrics(bytes)
                             }
-                            methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
+                            mediaPlayer = prepareMediaPlayer(path, playbackSession)
+                            publishLyrics()
                             result.success(true)
-                        } catch (e: Exception) {
+                        } catch (error: Throwable) {
+                            Log.e("MainActivity", "Song load failed", error)
+                            stopAllPlayback()
                             result.success(false)
                         }
                     }
                     "loadBlobSong" -> {
+                        playbackSession = call.argument<Int>("sessionId") ?: 0
+                        stopAllPlayback()
                         val passedPath = call.argument<String>("blobPath")
                         val sectorOffset = call.argument<Int>("offset") ?: 0
                         val sectorLength = call.argument<Int>("length") ?: 0
@@ -361,6 +410,7 @@ class MainActivity: FlutterActivity() {
                                     try {
                                         mediaPlayer?.release()
                                         mediaPlayer = null
+                                        configureBass()
                                         ok = bassEngine!!.loadMidi(midiFile.readBytes())
                                     } catch (t: Throwable) {
                                         Log.e("MainActivity", "BASS loadMidi failed", t)
@@ -368,7 +418,7 @@ class MainActivity: FlutterActivity() {
                                     }
                                     if (ok) {
                                         isUsingBassEngine = true
-                                        methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
+                                        publishLyrics()
                                         result.success(true)
                                         return@setMethodCallHandler
                                     }
@@ -376,17 +426,8 @@ class MainActivity: FlutterActivity() {
                                 isUsingBassEngine = false
                                 try {
                                     mediaPlayer?.release()
-                                    mediaPlayer = MediaPlayer().apply {
-                                        setDataSource(midiFile.absolutePath)
-                                        prepare()
-                                        applyPlaybackParams()
-                                        setOnCompletionListener {
-                                            runOnUiThread {
-                                                methodChannel?.invokeMethod("onSongEnded", null)
-                                            }
-                                        }
-                                    }
-                                    methodChannel?.invokeMethod("onLyricsLoaded", lastExtractedLyrics)
+                                    mediaPlayer = prepareMediaPlayer(midiFile.absolutePath, playbackSession)
+                                    publishLyrics()
                                     result.success(true)
                                 } catch (e: Exception) {
                                     Log.e("MainActivity", "MediaPlayer fallback failed", e)
@@ -403,70 +444,39 @@ class MainActivity: FlutterActivity() {
                     }
                     "play" -> {
                         try {
-                            if (isUsingBassEngine) {
-                                val ok = bassEngine?.play() ?: false
-                                if (ok) {
-                                    startPlaybackWatcher()
-                                    result.success(true)
-                                } else {
-                                    val mpStarted = try {
-                                        mediaPlayer?.start()
-                                        true
-                                    } catch (_: Throwable) { false }
-                                    result.success(mpStarted)
-                                }
+                            val ok = if (isUsingBassEngine) {
+                                bassEngine?.play() == true
                             } else {
-                                val mpStarted = try {
-                                    mediaPlayer?.start()
-                                    true
-                                } catch (_: Throwable) { false }
-                                result.success(mpStarted)
+                                val player = mediaPlayer
+                                if (player == null) false else { player.start(); applyPlaybackParams(); true }
                             }
-                        } catch (e: Exception) {
+                            if (ok && isUsingBassEngine) startPlaybackWatcher()
+                            result.success(ok)
+                        } catch (error: Throwable) {
+                            Log.e("MainActivity", "Playback start failed", error)
                             result.success(false)
                         }
                     }
                     "pause" -> {
+                        stopPlaybackWatcher()
                         try {
-                            stopPlaybackWatcher()
-                            if (isUsingBassEngine) {
-                                bassEngine?.pause()
-                                result.success(true)
-                            } else {
-                                mediaPlayer?.pause()
-                                result.success(true)
-                            }
-                        } catch (e: Exception) {
-                            result.success(false)
-                        }
+                            val ok = if (isUsingBassEngine) bassEngine?.pause() == true
+                                else mediaPlayer?.let { it.pause(); true } ?: false
+                            result.success(ok)
+                        } catch (_: Throwable) { result.success(false) }
                     }
                     "stop" -> {
-                        try {
-                            stopPlaybackWatcher()
-                            if (isUsingBassEngine) {
-                                bassEngine?.stop()
-                                result.success(true)
-                            } else {
-                                mediaPlayer?.stop()
-                                result.success(true)
-                            }
-                        } catch (e: Exception) {
-                            result.success(false)
-                        }
+                        stopAllPlayback()
+                        result.success(true)
                     }
                     "seekTo" -> {
                         val positionMs = call.argument<Int>("positionMs") ?: 0
                         try {
-                            if (isUsingBassEngine) {
-                                bassEngine?.seekTo(positionMs.toLong())
-                                result.success(true)
-                            } else {
-                                mediaPlayer?.seekTo(positionMs)
-                                result.success(true)
-                            }
-                        } catch (e: Exception) {
-                            result.success(false)
-                        }
+                            val ok = if (isUsingBassEngine) {
+                                bassEngine?.seekTo(positionMs.toLong()) == true
+                            } else mediaPlayer?.let { it.seekTo(positionMs); true } ?: false
+                            result.success(ok)
+                        } catch (_: Throwable) { result.success(false) }
                     }
                     "getPosition" -> {
                         try {
@@ -504,6 +514,17 @@ class MainActivity: FlutterActivity() {
                     "getSoundFonts" -> {
                         result.success(discoverSoundFonts())
                     }
+                    "applySettings" -> {
+                        midiVolume = (call.argument<Double>("midiVolume") ?: 1.0).toFloat().coerceIn(0.0f, 2.0f)
+                        // MediaPlayer's volume API is limited to 0..1.
+                        mediaVolume = (call.argument<Double>("mediaVolume") ?: 1.0).toFloat().coerceIn(0.0f, 1.0f)
+                        midiPolyphony = (call.argument<Int>("polyphony") ?: 512).coerceIn(64, 512)
+                        midiReverb = (call.argument<Int>("reverb") ?: 4).coerceIn(0, 4)
+                        midiChorus = (call.argument<Int>("chorus") ?: 4).coerceIn(0, 4)
+                        configureBass()
+                        mediaPlayer?.setVolume(mediaVolume, mediaVolume)
+                        result.success(true)
+                    }
                     "setPitch" -> {
                         val semitones = call.argument<Int>("semitones") ?: 0
                         if (isUsingBassEngine) {
@@ -524,6 +545,7 @@ class MainActivity: FlutterActivity() {
                     }
                     "playSfx" -> {
                         val name = call.argument<String>("name")
+                        val volume = (call.argument<Double>("volume") ?: 1.0).toFloat().coerceIn(0.0f, 1.0f)
                         try {
                             if (!name.isNullOrEmpty()) {
                                 val assetPath = "assets/audio/sfx/$name.mp3"
@@ -534,6 +556,7 @@ class MainActivity: FlutterActivity() {
                                     setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
                                     afd.close()
                                     prepare()
+                                    setVolume(volume, volume)
                                     start()
                                     setOnCompletionListener {
                                         it.release()
@@ -547,7 +570,7 @@ class MainActivity: FlutterActivity() {
                         }
                     }
                     "getLyrics" -> {
-                        result.success(lastExtractedLyrics)
+                        result.success(mapOf("sessionId" to playbackSession, "lyrics" to lastExtractedLyrics))
                     }
                     else -> result.notImplemented()
                 }
@@ -870,6 +893,7 @@ class MainActivity: FlutterActivity() {
     private fun applyPlaybackParams() {
         try {
             if (mediaPlayer != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                if (mediaPlayer?.isPlaying != true) return
                 val params = mediaPlayer?.playbackParams ?: PlaybackParams()
                 params.pitch = currentPitch
                 params.speed = currentTempo

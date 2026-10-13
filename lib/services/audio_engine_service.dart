@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/services.dart';
 
 class AudioEngineService {
@@ -9,31 +10,46 @@ class AudioEngineService {
     _channel.setMethodCallHandler(_handleMethodCall);
   }
 
-  static const MethodChannel _channel = MethodChannel('com.karaokehub.next/audio_engine');
+  static const MethodChannel _channel = MethodChannel(
+    'com.karaokehub.next/audio_engine',
+  );
 
-  VoidCallback? onSongEnded;
+  void Function(int)? onSongEnded;
   void Function(List<Map<String, dynamic>>)? onLyricsLoaded;
 
   List<Map<String, dynamic>> _currentLyrics = [];
-  List<Map<String, dynamic>> get currentLyrics => List.unmodifiable(_currentLyrics);
+  int _sessionId = 0;
+  List<Map<String, dynamic>> get currentLyrics =>
+      List.unmodifiable(_currentLyrics);
 
   Future<void> _handleMethodCall(MethodCall call) async {
     if (call.method == 'onSongEnded') {
-      onSongEnded?.call();
+      final args = call.arguments;
+      if (args is Map && args['sessionId'] == _sessionId) {
+        onSongEnded?.call(_sessionId);
+      }
     } else if (call.method == 'onLyricsLoaded') {
-      final raw = call.arguments;
+      final args = call.arguments;
+      if (args is! Map || args['sessionId'] != _sessionId) return;
+      final raw = args['lyrics'];
       if (raw is List) {
-        _currentLyrics = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        _currentLyrics =
+            raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         onLyricsLoaded?.call(_currentLyrics);
       }
     }
   }
 
   Future<List<Map<String, dynamic>>> getLyrics() async {
+    final session = _sessionId;
     try {
-      final res = await _channel.invokeMethod<List>('getLyrics');
-      if (res != null) {
-        _currentLyrics = res.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final res = await _channel.invokeMethod<Map>('getLyrics');
+      final lyrics = res?['lyrics'];
+      if (res?['sessionId'] == session &&
+          session == _sessionId &&
+          lyrics is List) {
+        _currentLyrics =
+            lyrics.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         return _currentLyrics;
       }
     } catch (_) {}
@@ -79,7 +95,9 @@ class AudioEngineService {
 
   Future<bool> setSoundFont(String? path) async {
     try {
-      final res = await _channel.invokeMethod<bool>('setSoundFont', {'path': path});
+      final res = await _channel.invokeMethod<bool>('setSoundFont', {
+        'path': path,
+      });
       return res ?? false;
     } catch (_) {
       return false;
@@ -96,10 +114,20 @@ class AudioEngineService {
     return [];
   }
 
-  Future<bool> loadSong(String? path) async {
+  void beginSession(int sessionId) {
+    _sessionId = sessionId;
+    _currentLyrics = [];
+    onLyricsLoaded?.call(_currentLyrics);
+  }
+
+  Future<bool> loadSong(String? path, {required int sessionId}) async {
+    beginSession(sessionId);
     if (path == null || path.isEmpty) return false;
     try {
-      final res = await _channel.invokeMethod<bool>('loadSong', {'path': path});
+      final res = await _channel.invokeMethod<bool>('loadSong', {
+        'path': path,
+        'sessionId': sessionId,
+      });
       return res ?? false;
     } catch (_) {
       return false;
@@ -110,7 +138,9 @@ class AudioEngineService {
     String? blobPath,
     required int offset,
     required int length,
+    required int sessionId,
   }) async {
+    beginSession(sessionId);
     String resolvedPath = blobPath ?? '';
     if (resolvedPath.isEmpty) {
       final candidates = [
@@ -147,6 +177,7 @@ class AudioEngineService {
         'blobPath': resolvedPath,
         'offset': offset,
         'length': length,
+        'sessionId': sessionId,
       });
       return res ?? false;
     } catch (_) {
@@ -183,7 +214,9 @@ class AudioEngineService {
 
   Future<bool> seekTo(int positionMs) async {
     try {
-      final res = await _channel.invokeMethod<bool>('seekTo', {'positionMs': positionMs});
+      final res = await _channel.invokeMethod<bool>('seekTo', {
+        'positionMs': positionMs,
+      });
       return res ?? false;
     } catch (_) {
       return false;
@@ -220,9 +253,19 @@ class AudioEngineService {
     } catch (_) {}
   }
 
-  Future<void> playSfx(String name) async {
+  Future<void> applySettings(Map<String, dynamic> settings) async {
+    await _channel.invokeMethod('applySettings', settings);
+  }
+
+  Future<bool> playSfx(String name, {double volume = 1.0}) async {
     try {
-      await _channel.invokeMethod('playSfx', {'name': name});
-    } catch (_) {}
+      return await _channel.invokeMethod<bool>('playSfx', {
+            'name': name,
+            'volume': volume,
+          }) ??
+          false;
+    } catch (_) {
+      return false;
+    }
   }
 }

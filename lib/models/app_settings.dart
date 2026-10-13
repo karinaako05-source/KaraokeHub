@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 enum ChannelMode { stereo, left, right, mixed }
+
 enum BackgroundMode { video, slideshow, camera, none }
+
 enum LyricAlignment { center, split, closeSplit }
 
 class AppSettings extends ChangeNotifier {
@@ -13,10 +16,12 @@ class AppSettings extends ChangeNotifier {
     loadSettings();
   }
 
-  static const String _settingsFilePath = '/sdcard/Download/KaraokeHub/karaokehub_settings.json';
+  static const String _settingsFilePath =
+      '/sdcard/Download/KaraokeHub/karaokehub_settings.json';
 
   // --- 1. SoundFonts & Content ---
-  String? selectedSf2Path = '/sdcard/Download/KaraokeHub/content/sound/soundfont.sf2';
+  String? selectedSf2Path =
+      '/sdcard/Download/KaraokeHub/content/sound/soundfont.sf2';
   String? selectedSf2Name = 'soundfont.sf2';
 
   // --- 2. BGV (Background Visual) ---
@@ -41,8 +46,10 @@ class AppSettings extends ChangeNotifier {
 
   // --- 4. Lyrics ---
   LyricAlignment lyricAlignment = LyricAlignment.center;
-  int lyricAnimation = 0; // 0: None, 1: Fade, 2: Wipe, 3: Crossfade, 4: Flip, 5: Bounce
-  int countdownStyle = 0; // 0: Text Animated, 1: Text Static, 2: Star, 3: Stacked Img, etc.
+  int lyricAnimation =
+      0; // 0: None, 1: Fade, 2: Wipe, 3: Crossfade, 4: Flip, 5: Bounce
+  int countdownStyle =
+      0; // 0: Text Animated, 1: Text Static, 2: Star, 3: Stacked Img, etc.
   double outlineThickness = 6.0; // 2, 4, 6, 8, 10, 12
   double fontSizePortrait = 42.0; // 20-120
   double fontSizeLandscape = 63.0; // 20-150
@@ -67,12 +74,22 @@ class AppSettings extends ChangeNotifier {
   bool showDialogLandscape = true;
   bool hideControlsLandscape = false;
 
-  void loadSettings() {
+  Map<String, dynamic> get audioSettings => {
+        'midiVolume': midiMasterVolume / 100,
+        'mediaVolume': mp3MasterVolume / 100,
+        'polyphony': midiPolyphony,
+        'reverb': midiReverb,
+        'chorus': midiChorus,
+      };
+
+  void loadSettings({String path = _settingsFilePath}) {
     try {
-      final f = File(_settingsFilePath);
+      final f = File(path);
       if (f.existsSync()) {
         final data = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
-        selectedSf2Path = data['selectedSf2Path'] as String? ?? selectedSf2Path;
+        if (data.containsKey('selectedSf2Path')) {
+          selectedSf2Path = data['selectedSf2Path'] as String?;
+        }
         selectedSf2Name = data['selectedSf2Name'] as String? ?? selectedSf2Name;
 
         bgvMode = BackgroundMode.values[data['bgvMode'] as int? ?? 0];
@@ -92,12 +109,16 @@ class AppSettings extends ChangeNotifier {
         channelMode = ChannelMode.values[data['channelMode'] as int? ?? 0];
         typingSoundVolume = data['typingSoundVolume'] as int? ?? 2;
 
-        lyricAlignment = LyricAlignment.values[data['lyricAlignment'] as int? ?? 0];
+        lyricAlignment =
+            LyricAlignment.values[data['lyricAlignment'] as int? ?? 0];
         lyricAnimation = data['lyricAnimation'] as int? ?? 0;
         countdownStyle = data['countdownStyle'] as int? ?? 0;
-        outlineThickness = (data['outlineThickness'] as num?)?.toDouble() ?? 6.0;
-        fontSizePortrait = (data['fontSizePortrait'] as num?)?.toDouble() ?? 42.0;
-        fontSizeLandscape = (data['fontSizeLandscape'] as num?)?.toDouble() ?? 63.0;
+        outlineThickness =
+            (data['outlineThickness'] as num?)?.toDouble() ?? 6.0;
+        fontSizePortrait =
+            (data['fontSizePortrait'] as num?)?.toDouble() ?? 42.0;
+        fontSizeLandscape =
+            (data['fontSizeLandscape'] as num?)?.toDouble() ?? 63.0;
         lyricShowShadow = data['lyricShowShadow'] as bool? ?? true;
         fourLinesPortrait = data['fourLinesPortrait'] as bool? ?? false;
         useRandomLyricColor = data['useRandomLyricColor'] as bool? ?? false;
@@ -120,9 +141,9 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  void saveSettings() {
+  void saveSettings({String path = _settingsFilePath}) {
     try {
-      final f = File(_settingsFilePath);
+      final f = File(path);
       f.parent.createSync(recursive: true);
       final map = {
         'selectedSf2Path': selectedSf2Path,

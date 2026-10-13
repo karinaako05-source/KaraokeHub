@@ -1,14 +1,17 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
+
 import '../models/song_item.dart';
 
 class SongCatalogService extends ChangeNotifier {
   static final SongCatalogService _instance = SongCatalogService._internal();
   factory SongCatalogService() => _instance;
   SongCatalogService._internal() {
-    _loadCatalog();
+    unawaited(reloadCatalog());
   }
 
   final List<SongItem> _songs = [];
@@ -18,49 +21,24 @@ class SongCatalogService extends ChangeNotifier {
   bool get isScanning => _isScanning;
 
   int _nextGeneratedCode = 50001;
+  Future<void>? _catalogLoad;
+  Future<void>? _storageScan;
 
-  Future<void> reloadCatalog() async {
-    await _loadCatalog();
-    notifyListeners();
+  Future<void> reloadCatalog() {
+    return _catalogLoad ??= _loadCatalog().whenComplete(() {
+      _catalogLoad = null;
+      notifyListeners();
+    });
   }
 
   Future<void> _loadCatalog() async {
+    if (_storageScan != null) await _storageScan;
     _songs.clear();
-
-    // 1. Add bundled playable assets with real sounds
-    _songs.add(
-      const SongItem(
-        code: "00001",
-        title: "Test Audio Track",
-        artist: "Karaoke Studio",
-        genre: "AUDIO",
-        filePath: "assets/audio/test.mp3",
-      ),
-    );
-    _songs.add(
-      const SongItem(
-        code: "00002",
-        title: "Sample MIDI Track",
-        artist: "Midi Synth",
-        genre: "MIDI",
-        filePath: "assets/audio/sample.mid",
-      ),
-    );
-    _songs.add(
-      const SongItem(
-        code: "00003",
-        title: "Test MIDI Track",
-        artist: "Midi Synth",
-        genre: "MIDI",
-        filePath: "assets/audio/test.mid",
-      ),
-    );
-
-    // 2. Scan authentic shubidx/shubblob catalog if present
+    _nextGeneratedCode = 50001;
+    activeBlobPath = null;
+    // Load only songs present on the device.
     await _tryLoadShubCatalog();
-
-    // 3. Scan accessible device directories for actual media files (MP3, WAV, MIDI)
-    await scanDeviceStorage();
+    await _scanDeviceStorage();
   }
 
   static String? activeBlobPath;
@@ -108,7 +86,8 @@ class SongCatalogService extends ChangeNotifier {
         try {
           if (searchDir.existsSync()) {
             for (final entity in searchDir.listSync(recursive: false)) {
-              if (entity is Directory && entity.path.toLowerCase().endsWith('idx')) {
+              if (entity is Directory &&
+                  entity.path.toLowerCase().endsWith('idx')) {
                 final nested = File('${entity.path}/shubidx');
                 if (nested.existsSync() && nested.lengthSync() > 0) {
                   foundIdxFile = nested;
@@ -192,12 +171,14 @@ class SongCatalogService extends ChangeNotifier {
       if (rtype == typeGenre) {
         final gid = bytes[offset + 2];
         try {
-          final gname = latin1.decode(bytes.sublist(offset + 5, offset + length)).trim();
+          final gname =
+              latin1.decode(bytes.sublist(offset + 5, offset + length)).trim();
           genres[gid] = gname;
         } catch (_) {}
       } else if (rtype == typeSinger) {
         try {
-          final sname = latin1.decode(bytes.sublist(offset + 5, offset + length)).trim();
+          final sname =
+              latin1.decode(bytes.sublist(offset + 5, offset + length)).trim();
           singers.add(sname);
         } catch (_) {
           singers.add('Unknown');
@@ -217,7 +198,8 @@ class SongCatalogService extends ChangeNotifier {
         String title = 'Unknown Title';
         if (titleLen > 0 && cursor + titleLen <= bytes.length) {
           try {
-            title = latin1.decode(bytes.sublist(cursor, cursor + titleLen)).trim();
+            title =
+                latin1.decode(bytes.sublist(cursor, cursor + titleLen)).trim();
           } catch (_) {}
         }
         parsedSongs.add({
@@ -238,7 +220,8 @@ class SongCatalogService extends ChangeNotifier {
       final codeInt = (i < codes.length) ? codes[i] : i;
       final codeStr = codeInt.toString().padLeft(5, '0');
       final singerIdx = item['singerIdx'] as int;
-      final artist = (singerIdx < singers.length) ? singers[singerIdx] : 'Unknown';
+      final artist =
+          (singerIdx < singers.length) ? singers[singerIdx] : 'Unknown';
       final genreId = item['genreId'] as int;
       final genre = genres[genreId] ?? 'OPM';
 
@@ -257,17 +240,26 @@ class SongCatalogService extends ChangeNotifier {
   }
 
   Future<void> scanDeviceStorage([List<String>? customFolders]) async {
+    if (_catalogLoad != null) await _catalogLoad;
+    await (_storageScan ??= _scanDeviceStorage(customFolders).whenComplete(() {
+      _storageScan = null;
+    }));
+  }
+
+  Future<void> _scanDeviceStorage([List<String>? customFolders]) async {
     _isScanning = true;
     notifyListeners();
 
-    final searchDirs = customFolders ?? [
-      '/sdcard/Download',
-      '/sdcard/Music',
-      '/sdcard/KaraokeHub/songs',
-      '/sdcard/SongHub/songs',
-    ];
+    final searchDirs = customFolders ??
+        [
+          '/sdcard/Download',
+          '/sdcard/Music',
+          '/sdcard/KaraokeHub/songs',
+          '/sdcard/SongHub/songs',
+        ];
 
-    final Set<String> existingPaths = _songs.map((s) => s.filePath ?? '').toSet();
+    final Set<String> existingPaths =
+        _songs.map((s) => s.filePath ?? '').toSet();
 
     for (final dirPath in searchDirs) {
       try {
@@ -302,8 +294,11 @@ class SongCatalogService extends ChangeNotifier {
   void _parseAndAddFile(File file) {
     final fileName = file.uri.pathSegments.last;
     final dotIndex = fileName.lastIndexOf('.');
-    final baseName = dotIndex != -1 ? fileName.substring(0, dotIndex) : fileName;
-    final extension = dotIndex != -1 ? fileName.substring(dotIndex + 1).toUpperCase() : 'AUDIO';
+    final baseName =
+        dotIndex != -1 ? fileName.substring(0, dotIndex) : fileName;
+    final extension = dotIndex != -1
+        ? fileName.substring(dotIndex + 1).toUpperCase()
+        : 'AUDIO';
 
     String code = '$_nextGeneratedCode';
     _nextGeneratedCode++;
@@ -387,7 +382,8 @@ class SongCatalogService extends ChangeNotifier {
         counts[a] = (counts[a] ?? 0) + 1;
       }
     }
-    final list = counts.entries.map((e) => {'artist': e.key, 'count': e.value}).toList();
+    final list =
+        counts.entries.map((e) => {'artist': e.key, 'count': e.value}).toList();
     list.sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
     return list;
   }

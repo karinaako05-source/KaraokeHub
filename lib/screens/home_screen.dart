@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/song_item.dart';
+
 import '../services/audio_engine_service.dart';
 import '../services/song_catalog_service.dart';
 import '../services/videoke_flow_manager.dart';
@@ -43,7 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredSongs = _catalog.search(_searchCtrl.text, genre: _selectedGenre);
+    final filteredSongs = _catalog.search(
+      _searchCtrl.text,
+      genre: _selectedGenre,
+    );
     final genres = _catalog.getGenres();
 
     return Scaffold(
@@ -75,16 +78,23 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Rescan Storage',
             onPressed: () async {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Scanning storage for karaoke songs & blobs...')),
+                const SnackBar(
+                  content: Text(
+                    'Scanning storage for karaoke songs & blobs...',
+                  ),
+                ),
               );
-              await _catalog.scanDeviceStorage();
+              await _catalog.reloadCatalog();
             },
           ),
           Stack(
             alignment: Alignment.center,
             children: [
               IconButton(
-                icon: const Icon(Icons.queue_music_rounded, color: Colors.white),
+                icon: const Icon(
+                  Icons.queue_music_rounded,
+                  color: Colors.white,
+                ),
                 onPressed: () => _showQueueDrawer(context),
               ),
               if (_flow.queue.isNotEmpty)
@@ -132,8 +142,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: const TextStyle(color: Colors.white, fontSize: 14),
                       decoration: const InputDecoration(
                         hintText: 'Search title, artist, or 5-digit code...',
-                        hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
-                        prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF00F2FE), size: 20),
+                        hintStyle: TextStyle(
+                          color: Colors.white38,
+                          fontSize: 13,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search_rounded,
+                          color: Color(0xFF00F2FE),
+                          size: 20,
+                        ),
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(vertical: 14),
                       ),
@@ -155,7 +172,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.dialpad_rounded, color: Colors.black, size: 20),
+                        Icon(
+                          Icons.dialpad_rounded,
+                          color: Colors.black,
+                          size: 20,
+                        ),
                         SizedBox(width: 6),
                         Text(
                           'KEYPAD',
@@ -196,13 +217,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     backgroundColor: const Color(0xFF101624),
                     labelStyle: TextStyle(
                       color: isSelected ? Colors.white : Colors.white60,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
                       fontSize: 11,
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(18),
                       side: BorderSide(
-                        color: isSelected ? const Color(0xFF9B51E0) : Colors.white.withOpacity(0.08),
+                        color: isSelected
+                            ? const Color(0xFF9B51E0)
+                            : Colors.white.withOpacity(0.08),
                       ),
                     ),
                   ),
@@ -220,7 +244,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.music_off_rounded, size: 48, color: Colors.white.withOpacity(0.2)),
+                        Icon(
+                          Icons.music_off_rounded,
+                          size: 48,
+                          color: Colors.white.withOpacity(0.2),
+                        ),
                         const SizedBox(height: 12),
                         const Text(
                           'No songs found matching query.',
@@ -231,7 +259,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                 : ListView.builder(
                     itemCount: filteredSongs.length,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     itemBuilder: (ctx, idx) {
                       final song = filteredSongs[idx];
                       final isCurrent = _flow.currentSong?.code == song.code;
@@ -258,12 +289,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('Reserved: ${song.title} (${song.code})'),
+                                content: Text(
+                                  'Reserved: ${song.title} (${song.code})',
+                                ),
                                 duration: const Duration(seconds: 2),
                                 action: SnackBarAction(
                                   label: 'PRIORITY',
                                   textColor: const Color(0xFFFF2A6D),
-                                  onPressed: () => _flow.reserve(song, priority: true),
+                                  onPressed: () =>
+                                      _flow.reserve(song, priority: true),
                                 ),
                               ),
                             );
@@ -280,7 +314,9 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
                 color: const Color(0xFF0F1523),
-                border: Border(top: BorderSide(color: Colors.white.withOpacity(0.08))),
+                border: Border(
+                  top: BorderSide(color: Colors.white.withOpacity(0.08)),
+                ),
               ),
               child: Row(
                 children: [
@@ -291,7 +327,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: const Color(0xFF00F2FE).withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.mic_external_on_rounded, color: Color(0xFF00F2FE), size: 22),
+                    child: const Icon(
+                      Icons.mic_external_on_rounded,
+                      color: Color(0xFF00F2FE),
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -310,7 +350,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         Text(
                           '${_flow.currentSong!.artist} • ${_flow.currentSong!.code}',
-                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -319,24 +362,35 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   IconButton(
                     icon: Icon(
-                      _flow.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+                      _flow.isPlaying
+                          ? Icons.pause_circle_filled_rounded
+                          : Icons.play_circle_fill_rounded,
                       color: const Color(0xFF00F2FE),
                       size: 32,
                     ),
                     onPressed: () => _flow.togglePlayPause(),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.skip_next_rounded, color: Colors.white70, size: 28),
+                    icon: const Icon(
+                      Icons.skip_next_rounded,
+                      color: Colors.white70,
+                      size: 28,
+                    ),
                     tooltip: 'Next Reserved Song',
                     onPressed: () => _flow.next(),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.fullscreen_rounded, color: Colors.white70, size: 24),
+                    icon: const Icon(
+                      Icons.fullscreen_rounded,
+                      color: Colors.white70,
+                      size: 24,
+                    ),
                     tooltip: 'Open Stage',
                     onPressed: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => KaraokePlayerScreen(song: _flow.currentSong!),
+                          builder: (_) =>
+                              KaraokePlayerScreen(song: _flow.currentSong!),
                         ),
                       );
                     },
@@ -383,7 +437,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               _flow.clearQueue();
                               setModalState(() {});
                             },
-                            child: const Text('Clear All', style: TextStyle(color: Colors.redAccent)),
+                            child: const Text(
+                              'Clear All',
+                              style: TextStyle(color: Colors.redAccent),
+                            ),
                           ),
                       ],
                     ),
@@ -404,12 +461,28 @@ class _HomeScreenState extends State<HomeScreen> {
                                 return ListTile(
                                   leading: CircleAvatar(
                                     backgroundColor: const Color(0xFF101624),
-                                    child: Text('${i + 1}', style: const TextStyle(color: Color(0xFF00F2FE))),
+                                    child: Text(
+                                      '${i + 1}',
+                                      style: const TextStyle(
+                                        color: Color(0xFF00F2FE),
+                                      ),
+                                    ),
                                   ),
-                                  title: Text(item.title, style: const TextStyle(color: Colors.white)),
-                                  subtitle: Text('${item.artist} • ${item.code}', style: const TextStyle(color: Colors.white54)),
+                                  title: Text(
+                                    item.title,
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                  subtitle: Text(
+                                    '${item.artist} • ${item.code}',
+                                    style: const TextStyle(
+                                      color: Colors.white54,
+                                    ),
+                                  ),
                                   trailing: IconButton(
-                                    icon: const Icon(Icons.close_rounded, color: Colors.white38),
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      color: Colors.white38,
+                                    ),
                                     onPressed: () {
                                       _flow.removeFromQueue(item.code);
                                       setModalState(() {});
@@ -442,7 +515,10 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (ctx, setModalState) {
             return SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -473,11 +549,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xFF04060A),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
+                        border: Border.all(
+                          color: const Color(0xFF00F2FE).withOpacity(0.3),
+                        ),
                       ),
                       alignment: Alignment.center,
                       child: Text(
-                        _keypadInput.isEmpty ? '_ _ _ _ _' : _keypadInput.padRight(5, '_'),
+                        _keypadInput.isEmpty
+                            ? '_ _ _ _ _'
+                            : _keypadInput.padRight(5, '_'),
                         style: const TextStyle(
                           color: Color(0xFF00F2FE),
                           fontSize: 26,
@@ -499,20 +579,35 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 10),
                         Row(
                           children: [
-                            _buildKeypadBtn('CLEAR', Colors.redAccent.withOpacity(0.2), Colors.redAccent, () {
-                              setModalState(() => _keypadInput = '');
-                            }),
+                            _buildKeypadBtn(
+                              'CLEAR',
+                              Colors.redAccent.withOpacity(0.2),
+                              Colors.redAccent,
+                              () {
+                                setModalState(() => _keypadInput = '');
+                              },
+                            ),
                             const SizedBox(width: 10),
-                            _buildKeypadBtn('0', const Color(0xFF131A2B), Colors.white, () {
-                              if (_keypadInput.length < 5) {
-                                _audio.playSfx('num_0');
-                                setModalState(() => _keypadInput += '0');
-                              }
-                            }),
+                            _buildKeypadBtn(
+                              '0',
+                              const Color(0xFF131A2B),
+                              Colors.white,
+                              () {
+                                if (_keypadInput.length < 5) {
+                                  _audio.playSfx('num_0');
+                                  setModalState(() => _keypadInput += '0');
+                                }
+                              },
+                            ),
                             const SizedBox(width: 10),
-                            _buildKeypadBtn('ENTER', const Color(0xFF00F2FE), Colors.black, () {
-                              _handleKeypadEnter(context);
-                            }),
+                            _buildKeypadBtn(
+                              'ENTER',
+                              const Color(0xFF00F2FE),
+                              Colors.black,
+                              () {
+                                _handleKeypadEnter(context);
+                              },
+                            ),
                           ],
                         ),
                       ],
@@ -528,25 +623,38 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildKeyRow(List<String> keys, void Function(void Function()) setModalState) {
+  Widget _buildKeyRow(
+    List<String> keys,
+    void Function(void Function()) setModalState,
+  ) {
     return Row(
       children: keys.map((key) {
         return Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: _buildKeypadBtn(key, const Color(0xFF131A2B), Colors.white, () {
-              if (_keypadInput.length < 5) {
-                _audio.playSfx('num_$key');
-                setModalState(() => _keypadInput += key);
-              }
-            }),
+            child: _buildKeypadBtn(
+              key,
+              const Color(0xFF131A2B),
+              Colors.white,
+              () {
+                if (_keypadInput.length < 5) {
+                  _audio.playSfx('num_$key');
+                  setModalState(() => _keypadInput += key);
+                }
+              },
+            ),
           ),
         );
       }).toList(),
     );
   }
 
-  Widget _buildKeypadBtn(String label, Color bg, Color textColor, VoidCallback onTap) {
+  Widget _buildKeypadBtn(
+    String label,
+    Color bg,
+    Color textColor,
+    VoidCallback onTap,
+  ) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -585,7 +693,9 @@ class _HomeScreenState extends State<HomeScreen> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✓ Reserved: [${found.code}] ${found.title} - ${found.artist}'),
+            content: Text(
+              '✓ Reserved: [${found.code}] ${found.title} - ${found.artist}',
+            ),
             backgroundColor: const Color(0xFF003847),
             duration: const Duration(seconds: 3),
             action: SnackBarAction(
@@ -594,7 +704,9 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 _flow.playSong(found);
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => KaraokePlayerScreen(song: found)),
+                  MaterialPageRoute(
+                    builder: (_) => KaraokePlayerScreen(song: found),
+                  ),
                 );
               },
             ),

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+
 import '../models/song_item.dart';
 import '../models/app_settings.dart';
 import '../services/audio_engine_service.dart';
@@ -15,11 +17,7 @@ class KaraokePlayerScreen extends StatefulWidget {
   final SongItem? song;
   final List<SongItem>? queue;
 
-  const KaraokePlayerScreen({
-    super.key,
-    this.song,
-    this.queue,
-  });
+  const KaraokePlayerScreen({super.key, this.song, this.queue});
 
   @override
   State<KaraokePlayerScreen> createState() => _KaraokePlayerScreenState();
@@ -42,23 +40,46 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   final List<String> _bgvVideos = [];
   int _currentBgvIndex = 0;
   bool _isBgvEnabled = true;
+  final AppSettings _settings = AppSettings();
+  final List<String> _bgvPhotos = [];
+  Timer? _photoTimer;
+  int _photoIndex = 0;
+  int _bgvGeneration = 0;
+  bool _polling = false;
+  int _lastSession = -1;
+  String? _lastPlaybackError;
+  String? _bgvSettingsKey;
+  late final void Function(List<Map<String, dynamic>>) _lyricsListener;
+
+  void _applyPlayerSettings() {
+    final key =
+        '${_settings.bgvMode}:${_settings.bgvCustomPath}:${_settings.bgvPhotoIntervalSeconds}';
+    if (key != _bgvSettingsKey) {
+      _bgvSettingsKey = key;
+      _initBgv();
+    }
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
     _flow.addListener(_onFlowChanged);
     _catalog.addListener(_onFlowChanged);
-    if (_catalog.songs.length <= 3) {
+    if (_catalog.songs.isEmpty) {
       _catalog.reloadCatalog();
     }
-    _initBgv();
+    _applyPlayerSettings();
+    _settings.addListener(_applyPlayerSettings);
 
     // If song was passed and nothing is playing, play it
-    if (widget.song != null && (_flow.currentSong == null || _flow.currentSong!.code != widget.song!.code)) {
+    if (widget.song != null &&
+        (_flow.currentSong == null ||
+            _flow.currentSong!.code != widget.song!.code)) {
       _flow.playSong(widget.song!);
     }
 
-    _audio.onLyricsLoaded = (newLyrics) {
+    _lyricsListener = (newLyrics) {
       if (mounted) {
         setState(() {
           _timedLyrics = newLyrics;
@@ -67,6 +88,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       }
     };
 
+    _audio.onLyricsLoaded = _lyricsListener;
     _audio.getLyrics().then((lyrics) {
       if (mounted && lyrics.isNotEmpty) {
         setState(() {
@@ -75,35 +97,45 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       }
     });
 
-    _playbackTimer = Timer.periodic(const Duration(milliseconds: 50), (_) async {
-      if (mounted && _flow.isPlaying) {
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 50), (
+      _,
+    ) async {
+      if (!mounted || !_flow.isPlaying || _polling) return;
+      _polling = true;
+      final session = _flow.sessionId;
+      try {
         final pos = await _audio.getPosition();
         final dur = await _audio.getDuration();
-
+        if (!mounted || session != _flow.sessionId || !_flow.isPlaying) return;
         int activeIdx = -1;
-        if (_timedLyrics.isNotEmpty) {
-          for (int i = 0; i < _timedLyrics.length; i++) {
-            final tMs = _timedLyrics[i]['timeMs'] as int? ?? 0;
-            if (pos >= tMs) {
-              activeIdx = i;
-            } else {
-              break;
-            }
-          }
+        for (int i = 0; i < _timedLyrics.length; i++) {
+          if (pos < (_timedLyrics[i]['timeMs'] as int? ?? 0)) break;
+          activeIdx = i;
         }
-
         setState(() {
           _positionMs = pos;
           _durationMs = dur;
           _activeLyricIndex = activeIdx;
         });
+      } finally {
+        _polling = false;
       }
     });
   }
 
   void _initBgv() {
+    final generation = ++_bgvGeneration;
+    _photoTimer?.cancel();
+    _photoTimer = null;
+    _bgvController?.dispose();
+    _bgvController = null;
+    _bgvVideos.clear();
+    _bgvPhotos.clear();
+    _photoIndex = 0;
+    _currentBgvIndex = 0;
+    if (_settings.bgvMode == BackgroundMode.none) return;
     Future.microtask(() async {
-      final candidateDirs = [
+      var candidateDirs = [
         '/sdcard/SongHub/bgv',
         '/sdcard/SongHub/bgv/3D',
         '/sdcard/SongHub/bgv/Motion',
@@ -126,27 +158,55 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
         '/storage/emulated/0/Download/KaraokeHub/content/bgv',
       ];
 
+      final custom = _settings.bgvCustomPath;
+      if (custom != null &&
+          custom.isNotEmpty &&
+          await Directory(custom).exists()) {
+        candidateDirs = [custom];
+      }
+      final videos = <String>{};
+      final photos = <String>{};
       for (final d in candidateDirs) {
         try {
           final dir = Directory(d);
           if (await dir.exists()) {
-            final entities = await dir.list(recursive: false).toList();
+            final entities =
+                await dir.list(recursive: true, followLinks: false).toList();
             for (final entity in entities) {
               if (entity is File) {
                 final lower = entity.path.toLowerCase();
-                if (lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi')) {
-                  if (!_bgvVideos.contains(entity.path)) {
-                    _bgvVideos.add(entity.path);
-                  }
+                if (lower.endsWith('.mp4') ||
+                    lower.endsWith('.mkv') ||
+                    lower.endsWith('.avi')) {
+                  videos.add(await entity.resolveSymbolicLinks());
+                } else if (lower.endsWith('.jpg') ||
+                    lower.endsWith('.jpeg') ||
+                    lower.endsWith('.png') ||
+                    lower.endsWith('.webp')) {
+                  photos.add(await entity.resolveSymbolicLinks());
                 }
               }
             }
           }
         } catch (_) {}
       }
-
-      if (mounted && _bgvVideos.isNotEmpty && _bgvController == null) {
+      if (!mounted || generation != _bgvGeneration) return;
+      _bgvVideos.addAll(videos);
+      _bgvPhotos.addAll(photos);
+      if (_settings.bgvMode == BackgroundMode.video && _bgvVideos.isNotEmpty) {
         _loadBgvVideo(_bgvVideos.first);
+      } else if (_settings.bgvMode == BackgroundMode.slideshow &&
+          _bgvPhotos.isNotEmpty) {
+        setState(() {});
+        _photoTimer = Timer.periodic(
+          Duration(seconds: _settings.bgvPhotoIntervalSeconds.clamp(1, 60)),
+          (_) {
+            if (mounted && _isBgvEnabled)
+              setState(() {
+                _photoIndex = (_photoIndex + 1) % _bgvPhotos.length;
+              });
+          },
+        );
       }
     });
   }
@@ -160,7 +220,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
         if (mounted && _bgvController == controller) {
           controller.setLooping(true);
           controller.setVolume(0.0); // Muted background video
-          controller.play();
+          if (_isBgvEnabled) controller.play();
           setState(() {});
         }
       }).catchError((err) {
@@ -172,6 +232,13 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   }
 
   void _cycleNextBgv() {
+    if (_settings.bgvMode == BackgroundMode.slideshow) {
+      if (_bgvPhotos.isNotEmpty && mounted)
+        setState(() {
+          _photoIndex = (_photoIndex + 1) % _bgvPhotos.length;
+        });
+      return;
+    }
     if (_bgvVideos.isEmpty) return;
     setState(() {
       _currentBgvIndex = (_currentBgvIndex + 1) % _bgvVideos.length;
@@ -191,7 +258,28 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
   }
 
   void _onFlowChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (_lastSession != _flow.sessionId) {
+      final hadSession = _lastSession >= 0;
+      _lastSession = _flow.sessionId;
+      _positionMs = 0;
+      _durationMs = 0;
+      _activeLyricIndex = -1;
+      _timedLyrics = [];
+      if (hadSession &&
+          _flow.currentSong != null &&
+          !_settings.bgvContinuousVideo) _cycleNextBgv();
+    }
+    final error = _flow.playbackError;
+    if (error != null && error != _lastPlaybackError) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted)
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(error)));
+      });
+    }
+    _lastPlaybackError = error;
+    setState(() {});
   }
 
   @override
@@ -199,6 +287,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
     _flow.removeListener(_onFlowChanged);
     _catalog.removeListener(_onFlowChanged);
     _playbackTimer?.cancel();
+    _settings.removeListener(_applyPlayerSettings);
+    _photoTimer?.cancel();
+    ++_bgvGeneration;
+    if (_audio.onLyricsLoaded == _lyricsListener) _audio.onLyricsLoaded = null;
     _bgvController?.dispose();
     super.dispose();
   }
@@ -212,19 +304,24 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final current = _flow.currentSong ?? widget.song ?? const SongItem(
-      code: "00000",
-      title: "Videoke Standby",
-      artist: "Ready to Sing",
-      genre: "OPM",
-    );
+    final current = _flow.currentSong ??
+        widget.song ??
+        const SongItem(
+          code: "00000",
+          title: "Videoke Standby",
+          artist: "Ready to Sing",
+          genre: "OPM",
+        );
 
     return Scaffold(
       backgroundColor: const Color(0xFF030509),
       body: Stack(
         children: [
           // Background Video (BGV) Layer
-          if (_isBgvEnabled && _bgvController != null && _bgvController!.value.isInitialized)
+          if (_isBgvEnabled &&
+              _settings.bgvMode == BackgroundMode.video &&
+              _bgvController != null &&
+              _bgvController!.value.isInitialized)
             Positioned.fill(
               child: FittedBox(
                 fit: BoxFit.cover,
@@ -236,6 +333,17 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
               ),
             ),
 
+          if (_isBgvEnabled &&
+              _settings.bgvMode == BackgroundMode.slideshow &&
+              _bgvPhotos.isNotEmpty)
+            Positioned.fill(
+              child: Image.file(
+                File(_bgvPhotos[_photoIndex]),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+
           // Dark Tint Gradient Overlay for Lyric Contrast
           Positioned.fill(
             child: Container(
@@ -243,7 +351,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: _isBgvEnabled && _bgvController != null && _bgvController!.value.isInitialized
+                  colors: _isBgvEnabled &&
+                          ((_bgvController != null &&
+                                  _bgvController!.value.isInitialized) ||
+                              (_settings.bgvMode == BackgroundMode.slideshow &&
+                                  _bgvPhotos.isNotEmpty))
                       ? [
                           Colors.black.withOpacity(0.72),
                           Colors.black.withOpacity(0.50),
@@ -294,7 +406,9 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: const Color(0xD00A0F1D), // Native #D00A0F1D dark translucent glass
+        color: const Color(
+          0xD00A0F1D,
+        ), // Native #D00A0F1D dark translucent glass
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.white.withOpacity(0.12)),
       ),
@@ -320,10 +434,14 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: _flow.queue.isNotEmpty ? const Color(0xFF003847) : Colors.white.withOpacity(0.08),
+                  color: _flow.queue.isNotEmpty
+                      ? const Color(0xFF003847)
+                      : Colors.white.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                    color: _flow.queue.isNotEmpty ? const Color(0xFF00E5FF) : Colors.white24,
+                    color: _flow.queue.isNotEmpty
+                        ? const Color(0xFF00E5FF)
+                        : Colors.white24,
                     width: 1.2,
                   ),
                 ),
@@ -349,11 +467,17 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: _flow.isPlaying ? const Color(0xFFFFEB3B) : const Color(0xFFFF9800),
+                color: _flow.isPlaying
+                    ? const Color(0xFFFFEB3B)
+                    : const Color(0xFFFF9800),
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
                 shadows: const [
-                  Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1)),
+                  Shadow(
+                    color: Colors.black,
+                    blurRadius: 4,
+                    offset: Offset(1, 1),
+                  ),
                 ],
               ),
             ),
@@ -372,7 +496,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
           IconButton(
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            icon: const Icon(Icons.search_rounded, color: Color(0xFF00E5FF), size: 18),
+            icon: const Icon(
+              Icons.search_rounded,
+              color: Color(0xFF00E5FF),
+              size: 18,
+            ),
             tooltip: 'Search Songs',
             onPressed: _showSearchAndReserveDialog,
           ),
@@ -416,7 +544,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 fontSize: 28,
                 fontWeight: FontWeight.w900,
                 shadows: [
-                  Shadow(color: Colors.black, blurRadius: 10, offset: Offset(2, 2)),
+                  Shadow(
+                    color: Colors.black,
+                    blurRadius: 10,
+                    offset: Offset(2, 2),
+                  ),
                 ],
               ),
             ),
@@ -428,7 +560,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 shadows: [
-                  Shadow(color: Colors.black, blurRadius: 6, offset: Offset(1, 1)),
+                  Shadow(
+                    color: Colors.black,
+                    blurRadius: 6,
+                    offset: Offset(1, 1),
+                  ),
                 ],
               ),
             ),
@@ -438,12 +574,18 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
               decoration: BoxDecoration(
                 color: Colors.black54,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5)),
+                border: Border.all(
+                  color: const Color(0xFF00E5FF).withOpacity(0.5),
+                ),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.music_note_rounded, color: Color(0xFF00E5FF), size: 16),
+                  Icon(
+                    Icons.music_note_rounded,
+                    color: Color(0xFF00E5FF),
+                    size: 16,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'Sing along with the melody',
@@ -452,6 +594,41 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 ],
               ),
             ),
+          ],
+        ),
+      );
+    }
+
+    final highlight = _settings.useRandomLyricColor
+        ? [
+            Colors.cyanAccent,
+            Colors.yellowAccent,
+            Colors.pinkAccent,
+            Colors.greenAccent,
+          ][_flow.sessionId % 4]
+        : Color(_settings.lyricHighlightColor);
+    final fontSize = MediaQuery.of(context).orientation == Orientation.portrait
+        ? _settings.fontSizePortrait
+        : _settings.fontSizeLandscape;
+    if (_settings.fourLinesPortrait &&
+        MediaQuery.of(context).orientation == Orientation.portrait) {
+      final start = _activeLyricIndex < 0 ? 0 : _activeLyricIndex;
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = start; i < _timedLyrics.length && i < start + 4; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: VideokeLyricWidget(
+                  lyricLine: _timedLyrics[i],
+                  positionMs: i == _activeLyricIndex ? _positionMs : 0,
+                  fontSize: fontSize,
+                  outlineWidth: _settings.outlineThickness,
+                  highlightColor: highlight,
+                ),
+              ),
           ],
         ),
       );
@@ -477,14 +654,18 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       }
 
       if (firstLyricTimeMs >= 3500) {
-        if (_positionMs >= (firstLyricTimeMs - 4000) && _positionMs < firstLyricTimeMs) {
+        if (_positionMs >= (firstLyricTimeMs - 4000) &&
+            _positionMs < firstLyricTimeMs) {
           final remainingMs = firstLyricTimeMs - _positionMs;
           countdownBeat = (remainingMs / 1000).ceil().clamp(1, 4);
           countdownOnRow0 = true;
         }
       } else if (firstLyricTimeMs > 400 && _positionMs < firstLyricTimeMs) {
         final step = firstLyricTimeMs / 4.0;
-        countdownBeat = ((firstLyricTimeMs - _positionMs) / step).ceil().clamp(1, 4);
+        countdownBeat = ((firstLyricTimeMs - _positionMs) / step).ceil().clamp(
+              1,
+              4,
+            );
         countdownOnRow0 = true;
       }
     } else {
@@ -503,14 +684,23 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
           final nextTimeMs = row1Line['timeMs'] as int? ?? 0;
           final curTokens = (row0Line['tokens'] as List?) ?? [];
           final curEndMs = curTokens.isNotEmpty
-              ? (curTokens.last['endMs'] as int? ?? row0Line['timeMs'] as int? ?? 0)
+              ? (curTokens.last['endMs'] as int? ??
+                  row0Line['timeMs'] as int? ??
+                  0)
               : (row0Line['timeMs'] as int? ?? 0) + 2500;
 
           final gapMs = nextTimeMs - curEndMs;
-          if (_positionMs >= curEndMs && (nextTimeMs - _positionMs) <= 4000 && (nextTimeMs - _positionMs) > 100) {
-            countdownBeat = ((nextTimeMs - _positionMs) / 1000).ceil().clamp(1, 4);
+          if (_positionMs >= curEndMs &&
+              (nextTimeMs - _positionMs) <= 4000 &&
+              (nextTimeMs - _positionMs) > 100) {
+            countdownBeat = ((nextTimeMs - _positionMs) / 1000).ceil().clamp(
+                  1,
+                  4,
+                );
             countdownOnRow0 = false;
-          } else if (_positionMs >= curEndMs && gapMs >= 5000 && (nextTimeMs - _positionMs) > 4000) {
+          } else if (_positionMs >= curEndMs &&
+              gapMs >= 5000 &&
+              (nextTimeMs - _positionMs) > 4000) {
             isInterlude = true;
           }
         }
@@ -528,14 +718,23 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
           final nextTimeMs = row0Line['timeMs'] as int? ?? 0;
           final curTokens = (row1Line['tokens'] as List?) ?? [];
           final curEndMs = curTokens.isNotEmpty
-              ? (curTokens.last['endMs'] as int? ?? row1Line['timeMs'] as int? ?? 0)
+              ? (curTokens.last['endMs'] as int? ??
+                  row1Line['timeMs'] as int? ??
+                  0)
               : (row1Line['timeMs'] as int? ?? 0) + 2500;
 
           final gapMs = nextTimeMs - curEndMs;
-          if (_positionMs >= curEndMs && (nextTimeMs - _positionMs) <= 4000 && (nextTimeMs - _positionMs) > 100) {
-            countdownBeat = ((nextTimeMs - _positionMs) / 1000).ceil().clamp(1, 4);
+          if (_positionMs >= curEndMs &&
+              (nextTimeMs - _positionMs) <= 4000 &&
+              (nextTimeMs - _positionMs) > 100) {
+            countdownBeat = ((nextTimeMs - _positionMs) / 1000).ceil().clamp(
+                  1,
+                  4,
+                );
             countdownOnRow0 = true;
-          } else if (_positionMs >= curEndMs && gapMs >= 5000 && (nextTimeMs - _positionMs) > 4000) {
+          } else if (_positionMs >= curEndMs &&
+              gapMs >= 5000 &&
+              (nextTimeMs - _positionMs) > 4000) {
             isInterlude = true;
           }
         }
@@ -558,7 +757,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1.2,
                 shadows: [
-                  Shadow(color: Colors.black, blurRadius: 10, offset: Offset(2, 2)),
+                  Shadow(
+                    color: Colors.black,
+                    blurRadius: 10,
+                    offset: Offset(2, 2),
+                  ),
                 ],
               ),
               maxLines: 2,
@@ -572,7 +775,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 shadows: [
-                  Shadow(color: Colors.black, blurRadius: 8, offset: Offset(1, 1)),
+                  Shadow(
+                    color: Colors.black,
+                    blurRadius: 8,
+                    offset: Offset(1, 1),
+                  ),
                 ],
               ),
             ),
@@ -597,11 +804,15 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 VideokeLyricWidget(
                   lyricLine: row0Line,
                   positionMs: isRow0Active ? _positionMs : 0,
-                  highlightColor: const Color(0xFFFFD600), // Authentic KTV Warm Gold
-                  fontSize: 24.0,
-                  outlineWidth: 4.5,
-                  alignment: Alignment.centerLeft,
-                  textAlign: TextAlign.left,
+                  highlightColor: highlight,
+                  fontSize: fontSize,
+                  outlineWidth: _settings.outlineThickness,
+                  alignment: _settings.lyricAlignment == LyricAlignment.center
+                      ? Alignment.center
+                      : Alignment.centerLeft,
+                  textAlign: _settings.lyricAlignment == LyricAlignment.center
+                      ? TextAlign.center
+                      : TextAlign.left,
                 ),
               ],
             ),
@@ -614,23 +825,37 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
               decoration: BoxDecoration(
                 color: Colors.black54,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.6)),
+                border: Border.all(
+                  color: const Color(0xFF00E5FF).withOpacity(0.6),
+                ),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.music_note_rounded, color: Color(0xFF00E5FF), size: 16),
+                  Icon(
+                    Icons.music_note_rounded,
+                    color: Color(0xFF00E5FF),
+                    size: 16,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'Instrumental',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
           ] else
-            const SizedBox(height: 16),
+            SizedBox(
+              height: _settings.lyricAlignment == LyricAlignment.closeSplit
+                  ? 8
+                  : 16,
+            ),
 
           // ROW 1: Bottom Line (Right-aligned with side margin, matching KaraokeLyricView.kt)
           if (row1Line != null)
@@ -650,11 +875,15 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 VideokeLyricWidget(
                   lyricLine: row1Line,
                   positionMs: isRow1Active ? _positionMs : 0,
-                  highlightColor: const Color(0xFFFFD600), // Authentic KTV Warm Gold
-                  fontSize: 24.0,
-                  outlineWidth: 4.5,
-                  alignment: Alignment.centerRight,
-                  textAlign: TextAlign.right,
+                  highlightColor: highlight,
+                  fontSize: fontSize,
+                  outlineWidth: _settings.outlineThickness,
+                  alignment: _settings.lyricAlignment == LyricAlignment.center
+                      ? Alignment.center
+                      : Alignment.centerRight,
+                  textAlign: _settings.lyricAlignment == LyricAlignment.center
+                      ? TextAlign.center
+                      : TextAlign.right,
                 ),
               ],
             ),
@@ -672,8 +901,12 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xD00A0F1D), // Exact #D00A0F1D from native Android layout
-        border: Border(top: BorderSide(color: Colors.white.withOpacity(0.08), width: 1)),
+        color: const Color(
+          0xD00A0F1D,
+        ), // Exact #D00A0F1D from native Android layout
+        border: Border(
+          top: BorderSide(color: Colors.white.withOpacity(0.08), width: 1),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -683,7 +916,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
             children: [
               Text(
                 _formatTime(_positionMs),
-                style: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 11, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Color(0xFFCCCCCC),
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -692,9 +929,13 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                   child: SizedBox(
                     height: 4,
                     child: LinearProgressIndicator(
-                      value: _durationMs > 0 ? (_positionMs / _durationMs).clamp(0.0, 1.0) : 0.0,
+                      value: _durationMs > 0
+                          ? (_positionMs / _durationMs).clamp(0.0, 1.0)
+                          : 0.0,
                       backgroundColor: Colors.white12,
-                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00E5FF)),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Color(0xFF00E5FF),
+                      ),
                     ),
                   ),
                 ),
@@ -702,7 +943,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
               const SizedBox(width: 8),
               Text(
                 _formatTime(_durationMs),
-                style: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 11, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Color(0xFFCCCCCC),
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -721,7 +966,9 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 ),
                 const SizedBox(width: 3),
                 _buildConsoleGlassBtn(
-                  text: _flow.pitch == 0 ? 'KEY 0' : 'KEY: ${_flow.pitch > 0 ? "+${_flow.pitch}" : _flow.pitch}',
+                  text: _flow.pitch == 0
+                      ? 'KEY 0'
+                      : 'KEY: ${_flow.pitch > 0 ? "+${_flow.pitch}" : _flow.pitch}',
                   textColor: Colors.white,
                   onTap: () => _flow.setPitch(0),
                 ),
@@ -731,17 +978,18 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                   textColor: const Color(0xFF00E5FF),
                   onTap: () => _flow.setPitch(_flow.pitch + 1),
                 ),
-
                 _buildConsoleDivider(),
-
                 _buildConsoleGlassBtn(
                   text: 'T-',
                   textColor: const Color(0xFFFF9800),
-                  onTap: () => _flow.setTempo((_flow.tempo - 0.05).clamp(0.5, 1.5)),
+                  onTap: () =>
+                      _flow.setTempo((_flow.tempo - 0.05).clamp(0.5, 1.5)),
                 ),
                 const SizedBox(width: 3),
                 _buildConsoleGlassBtn(
-                  text: (_flow.tempo - 1.0).abs() < 0.02 ? 'TEMPO 0' : 'TEM: ${(_flow.tempo * 100).toInt()}%',
+                  text: (_flow.tempo - 1.0).abs() < 0.02
+                      ? 'TEMPO 0'
+                      : 'TEM: ${(_flow.tempo * 100).toInt()}%',
                   textColor: Colors.white,
                   onTap: () => _flow.setTempo(1.0),
                 ),
@@ -749,17 +997,19 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 _buildConsoleGlassBtn(
                   text: 'T+',
                   textColor: const Color(0xFFFF9800),
-                  onTap: () => _flow.setTempo((_flow.tempo + 0.05).clamp(0.5, 1.5)),
+                  onTap: () =>
+                      _flow.setTempo((_flow.tempo + 0.05).clamp(0.5, 1.5)),
                 ),
-
                 _buildConsoleDivider(),
-
                 _buildConsoleGlassBtn(
                   text: 'MEL',
                   textColor: const Color(0xFF76FF03),
                   onTap: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Melody Guide Active'), duration: Duration(milliseconds: 700)),
+                      const SnackBar(
+                        content: Text('Melody Guide Active'),
+                        duration: Duration(milliseconds: 700),
+                      ),
                     );
                   },
                 ),
@@ -776,7 +1026,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                   textColor: const Color(0xFFEF9A9A),
                   onTap: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Recording Standby'), duration: Duration(milliseconds: 700)),
+                      const SnackBar(
+                        content: Text('Recording Standby'),
+                        duration: Duration(milliseconds: 700),
+                      ),
                     );
                   },
                 ),
@@ -818,7 +1071,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 _buildConsoleGlassBtn(
                   text: '👏 CHEER',
                   textColor: const Color(0xFFFF80AB),
-                  onTap: () => _audio.playSfx('cheer'),
+                  onTap: () => _audio.playSfx(
+                    'score_100',
+                    volume: _settings.fanfareLevel / 3,
+                  ),
                 ),
                 const SizedBox(width: 4),
                 _buildConsoleGlassBtn(
@@ -951,16 +1207,27 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.piano_rounded, color: Color(0xFFE040FB), size: 22),
+                      Icon(
+                        Icons.piano_rounded,
+                        color: Color(0xFFE040FB),
+                        size: 22,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'SELECT SOUNDFONT (.SF2)',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
                       ),
                     ],
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white54,
+                    ),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
@@ -970,19 +1237,46 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                 child: ListView(
                   children: [
                     ListTile(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      tileColor: settings.selectedSf2Path == null ? const Color(0x33E040FB) : Colors.transparent,
-                      title: const Text('Automatic (Best Available)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      subtitle: const Text('TBOSf, Dream_Sam, or default GM soundfont', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      tileColor: settings.selectedSf2Path == null
+                          ? const Color(0x33E040FB)
+                          : Colors.transparent,
+                      title: const Text(
+                        'Automatic (Best Available)',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'TBOSf, Dream_Sam, or default GM soundfont',
+                        style: TextStyle(color: Colors.white54, fontSize: 11),
+                      ),
                       trailing: settings.selectedSf2Path == null
-                          ? const Icon(Icons.check_circle_rounded, color: Color(0xFFE040FB))
+                          ? const Icon(
+                              Icons.check_circle_rounded,
+                              color: Color(0xFFE040FB),
+                            )
                           : null,
                       onTap: () async {
-                        await _flow.switchSoundFont(null);
+                        final ok = await _flow.switchSoundFont(null);
+                        if (!ok) {
+                          if (mounted)
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Unable to load a SoundFont'),
+                              ),
+                            );
+                          return;
+                        }
                         if (ctx.mounted) Navigator.pop(ctx);
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('SoundFont set to Automatic')),
+                            const SnackBar(
+                              content: Text('SoundFont set to Automatic'),
+                            ),
                           );
                         }
                       },
@@ -1004,34 +1298,60 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                         final name = item['name'] as String? ?? 'SoundFont';
                         final path = item['path'] as String? ?? '';
                         final sizeBytes = item['sizeBytes'] as int? ?? 0;
-                        final sizeMb = (sizeBytes / (1024 * 1024)).toStringAsFixed(1);
+                        final sizeMb =
+                            (sizeBytes / (1024 * 1024)).toStringAsFixed(1);
                         final isSelected = settings.selectedSf2Path == path;
 
                         return ListTile(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          tileColor: isSelected ? const Color(0x33E040FB) : Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          tileColor: isSelected
+                              ? const Color(0x33E040FB)
+                              : Colors.transparent,
                           title: Text(
                             name,
                             style: TextStyle(
-                              color: isSelected ? const Color(0xFFE040FB) : Colors.white,
+                              color: isSelected
+                                  ? const Color(0xFFE040FB)
+                                  : Colors.white,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           subtitle: Text(
                             '$sizeMb MB • $path',
-                            style: const TextStyle(color: Colors.white54, fontSize: 11),
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           trailing: isSelected
-                              ? const Icon(Icons.check_circle_rounded, color: Color(0xFFE040FB))
+                              ? const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: Color(0xFFE040FB),
+                                )
                               : null,
                           onTap: () async {
-                            await _flow.switchSoundFont(path);
+                            final ok = await _flow.switchSoundFont(path);
+                            if (!ok) {
+                              if (mounted)
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Unable to load the selected SoundFont',
+                                    ),
+                                  ),
+                                );
+                              return;
+                            }
                             if (ctx.mounted) Navigator.pop(ctx);
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Switched to SoundFont: $name')),
+                                SnackBar(
+                                  content: Text('Switched to SoundFont: $name'),
+                                ),
                               );
                             }
                           },
@@ -1066,7 +1386,9 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
               decoration: const BoxDecoration(
                 color: Color(0xFF0C101B),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                border: Border(top: BorderSide(color: Color(0xFF00F2FE), width: 2)),
+                border: Border(
+                  top: BorderSide(color: Color(0xFF00F2FE), width: 2),
+                ),
               ),
               child: Column(
                 children: [
@@ -1076,7 +1398,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.playlist_play_rounded, color: Color(0xFF00F2FE), size: 24),
+                          const Icon(
+                            Icons.playlist_play_rounded,
+                            color: Color(0xFF00F2FE),
+                            size: 24,
+                          ),
                           const SizedBox(width: 8),
                           Text(
                             'RESERVED SONGS (${queue.length})',
@@ -1090,7 +1416,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                         ],
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white60,
+                        ),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                     ],
@@ -1104,43 +1433,65 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.queue_music_rounded, color: Colors.white.withOpacity(0.15), size: 54),
+                                Icon(
+                                  Icons.queue_music_rounded,
+                                  color: Colors.white.withOpacity(0.15),
+                                  size: 54,
+                                ),
                                 const SizedBox(height: 10),
                                 const Text(
                                   'NO SONGS RESERVED',
-                                  style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 14),
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
                                 ),
                                 const SizedBox(height: 6),
                                 const Text(
                                   'Enter a song code using SELECT dialpad\nor search to queue songs for everyone!',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.white30, fontSize: 12),
+                                  style: TextStyle(
+                                    color: Colors.white30,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ],
                             ),
                           )
                         : ListView.separated(
                             itemCount: queue.length,
-                            separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                            separatorBuilder: (_, __) =>
+                                const Divider(color: Colors.white10, height: 1),
                             itemBuilder: (context, index) {
                               final item = queue[index];
                               return ListTile(
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
                                 leading: Container(
                                   width: 32,
                                   height: 32,
                                   decoration: BoxDecoration(
-                                    color: index == 0 ? const Color(0xFF00F2FE).withOpacity(0.2) : Colors.white.withOpacity(0.06),
+                                    color: index == 0
+                                        ? const Color(0xFF00F2FE)
+                                            .withOpacity(0.2)
+                                        : Colors.white.withOpacity(0.06),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: index == 0 ? const Color(0xFF00F2FE) : Colors.white12,
+                                      color: index == 0
+                                          ? const Color(0xFF00F2FE)
+                                          : Colors.white12,
                                     ),
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
                                     '#${index + 1}',
                                     style: TextStyle(
-                                      color: index == 0 ? const Color(0xFF00F2FE) : Colors.white60,
+                                      color: index == 0
+                                          ? const Color(0xFF00F2FE)
+                                          : Colors.white60,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
                                     ),
@@ -1149,9 +1500,13 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                 title: Row(
                                   children: [
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFFFD700).withOpacity(0.15),
+                                        color: const Color(0xFFFFD700)
+                                            .withOpacity(0.15),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
@@ -1169,21 +1524,32 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                         item.title,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                                 subtitle: Text(
                                   item.artist,
-                                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 12,
+                                  ),
                                 ),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     // Play Now
                                     IconButton(
-                                      icon: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF00E676), size: 24),
+                                      icon: const Icon(
+                                        Icons.play_circle_fill_rounded,
+                                        color: Color(0xFF00E676),
+                                        size: 24,
+                                      ),
                                       tooltip: 'Play Immediately',
                                       onPressed: () {
                                         Navigator.of(context).pop();
@@ -1192,7 +1558,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                     ),
                                     // Remove
                                     IconButton(
-                                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.white38, size: 20),
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                        color: Colors.white38,
+                                        size: 20,
+                                      ),
                                       tooltip: 'Remove',
                                       onPressed: () {
                                         _flow.removeFromQueue(item.code);
@@ -1239,7 +1609,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           icon: const Icon(Icons.dialpad_rounded, size: 18),
-                          label: const Text('DIALPAD SELECT', style: TextStyle(fontWeight: FontWeight.bold)),
+                          label: const Text(
+                            'DIALPAD SELECT',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           onPressed: () {
                             Navigator.of(context).pop();
                             _showKeypadDialog();
@@ -1327,7 +1700,7 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
     List<SongItem> candidates = [];
 
     // Ensure catalog is populated
-    if (_catalog.songs.length <= 3) {
+    if (_catalog.songs.isEmpty) {
       _catalog.reloadCatalog();
     }
 
@@ -1347,7 +1720,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
 
             void backspace() {
               if (enteredDigits.isNotEmpty) {
-                enteredDigits = enteredDigits.substring(0, enteredDigits.length - 1);
+                enteredDigits = enteredDigits.substring(
+                  0,
+                  enteredDigits.length - 1,
+                );
                 matchedSong = _findSongFromKeypad(enteredDigits);
                 candidates = _findCandidatesFromKeypad(enteredDigits);
                 setKeypadState(() {});
@@ -1388,22 +1764,35 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                             ),
                           ),
                         ),
-                        if (_catalog.songs.length <= 3)
+                        if (_catalog.songs.isEmpty)
                           IconButton(
-                            icon: const Icon(Icons.sync_rounded, color: Color(0xFF00F2FE), size: 18),
+                            icon: const Icon(
+                              Icons.sync_rounded,
+                              color: Color(0xFF00F2FE),
+                              size: 18,
+                            ),
                             tooltip: 'Reload Catalog',
                             onPressed: () async {
                               await _catalog.reloadCatalog();
+                              if (!ctx.mounted) return;
                               setKeypadState(() {
-                                matchedSong = _findSongFromKeypad(enteredDigits);
-                                candidates = _findCandidatesFromKeypad(enteredDigits);
+                                matchedSong = _findSongFromKeypad(
+                                  enteredDigits,
+                                );
+                                candidates = _findCandidatesFromKeypad(
+                                  enteredDigits,
+                                );
                               });
                             },
                           ),
                         IconButton(
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white54,
+                            size: 20,
+                          ),
                           onPressed: () => Navigator.of(context).pop(),
                         ),
                       ],
@@ -1413,17 +1802,24 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                     // Number Display Screen
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFFF9100).withOpacity(0.5)),
+                        border: Border.all(
+                          color: const Color(0xFFFF9100).withOpacity(0.5),
+                        ),
                       ),
                       alignment: Alignment.center,
                       child: Text(
                         enteredDigits.isEmpty ? "_ _ _ _ _" : enteredDigits,
                         style: TextStyle(
-                          color: enteredDigits.isEmpty ? Colors.white24 : const Color(0xFFFFD700),
+                          color: enteredDigits.isEmpty
+                              ? Colors.white24
+                              : const Color(0xFFFFD700),
                           fontSize: 26,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 4,
@@ -1439,9 +1835,15 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: matchedSong != null ? const Color(0xFF002230) : Colors.transparent,
+                        color: matchedSong != null
+                            ? const Color(0xFF002230)
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
-                        border: matchedSong != null ? Border.all(color: const Color(0xFF00F2FE).withOpacity(0.5)) : null,
+                        border: matchedSong != null
+                            ? Border.all(
+                                color: const Color(0xFF00F2FE).withOpacity(0.5),
+                              )
+                            : null,
                       ),
                       child: matchedSong != null
                           ? Column(
@@ -1451,7 +1853,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 5,
+                                        vertical: 1,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: const Color(0xFFFFD700),
                                         borderRadius: BorderRadius.circular(4),
@@ -1485,7 +1890,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                   matchedSong!.artist,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                  ),
                                 ),
                               ],
                             )
@@ -1497,7 +1905,9 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                       ? 'Type song number (e.g. 20554, 2482, 1)'
                                       : 'No match for code "$enteredDigits"',
                                   style: TextStyle(
-                                    color: enteredDigits.isEmpty ? Colors.white38 : const Color(0xFFFF5252),
+                                    color: enteredDigits.isEmpty
+                                        ? Colors.white38
+                                        : const Color(0xFFFF5252),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -1510,7 +1920,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                     },
                                     child: const Text(
                                       'Click here to Search by Title / Artist',
-                                      style: TextStyle(color: Color(0xFF00F2FE), fontSize: 11, decoration: TextDecoration.underline),
+                                      style: TextStyle(
+                                        color: Color(0xFF00F2FE),
+                                        fontSize: 11,
+                                        decoration: TextDecoration.underline,
+                                      ),
                                     ),
                                   ),
                               ],
@@ -1537,16 +1951,27 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                 });
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? const Color(0xFF00F2FE) : const Color(0xFF161F30),
+                                  color: isSelected
+                                      ? const Color(0xFF00F2FE)
+                                      : const Color(0xFF161F30),
                                   borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: isSelected ? Colors.white : Colors.white24),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.white24,
+                                  ),
                                 ),
                                 child: Text(
                                   '[${c.code}] ${c.title}',
                                   style: TextStyle(
-                                    color: isSelected ? Colors.black : Colors.white70,
+                                    color: isSelected
+                                        ? Colors.black
+                                        : Colors.white70,
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -1570,11 +1995,28 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            Expanded(child: _buildActionPadBtn('CLEAR', clearAll, color: const Color(0xFFFF5252))),
+                            Expanded(
+                              child: _buildActionPadBtn(
+                                'CLEAR',
+                                clearAll,
+                                color: const Color(0xFFFF5252),
+                              ),
+                            ),
                             const SizedBox(width: 8),
-                            Expanded(child: _buildDigitPadBtn('0', () => updateInput('0'))),
+                            Expanded(
+                              child: _buildDigitPadBtn(
+                                '0',
+                                () => updateInput('0'),
+                              ),
+                            ),
                             const SizedBox(width: 8),
-                            Expanded(child: _buildActionPadBtn('⌫', backspace, color: const Color(0xFFFF9100))),
+                            Expanded(
+                              child: _buildActionPadBtn(
+                                '⌫',
+                                backspace,
+                                color: const Color(0xFFFF9100),
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -1590,20 +2032,35 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF003847),
                               foregroundColor: const Color(0xFF00F2FE),
-                              side: const BorderSide(color: Color(0xFF00F2FE), width: 1.5),
+                              side: const BorderSide(
+                                color: Color(0xFF00F2FE),
+                                width: 1.5,
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                            icon: const Icon(Icons.bookmark_add_rounded, size: 18),
-                            label: const Text('RESERVE', style: TextStyle(fontWeight: FontWeight.w900)),
+                            icon: const Icon(
+                              Icons.bookmark_add_rounded,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'RESERVE',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
                             onPressed: matchedSong != null
                                 ? () {
                                     _flow.reserve(matchedSong!);
                                     Navigator.of(context).pop();
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('✓ Reserved: [${matchedSong!.code}] ${matchedSong!.title}'),
-                                        backgroundColor: const Color(0xFF003847),
+                                        content: Text(
+                                          '✓ Reserved: [${matchedSong!.code}] ${matchedSong!.title}',
+                                        ),
+                                        backgroundColor: const Color(
+                                          0xFF003847,
+                                        ),
                                       ),
                                     );
                                   }
@@ -1619,10 +2076,18 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                               backgroundColor: const Color(0xFF00E676),
                               foregroundColor: Colors.black,
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                            icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                            label: const Text('PLAY NOW', style: TextStyle(fontWeight: FontWeight.w900)),
+                            icon: const Icon(
+                              Icons.play_arrow_rounded,
+                              size: 20,
+                            ),
+                            label: const Text(
+                              'PLAY NOW',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
                             onPressed: matchedSong != null
                                 ? () {
                                     Navigator.of(context).pop();
@@ -1647,7 +2112,9 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
     return Row(
       children: [
         for (int i = 0; i < digits.length; i++) ...[
-          Expanded(child: _buildDigitPadBtn(digits[i], () => onDigit(digits[i]))),
+          Expanded(
+            child: _buildDigitPadBtn(digits[i], () => onDigit(digits[i])),
+          ),
           if (i < digits.length - 1) const SizedBox(width: 8),
         ],
       ],
@@ -1678,7 +2145,11 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
     );
   }
 
-  Widget _buildActionPadBtn(String text, VoidCallback onTap, {required Color color}) {
+  Widget _buildActionPadBtn(
+    String text,
+    VoidCallback onTap, {
+    required Color color,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -1715,12 +2186,15 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
           builder: (context, setSearchState) {
             final filtered = query.trim().isEmpty
                 ? _catalog.songs.take(20).toList()
-                : _catalog.songs.where((s) {
-                    final q = query.toLowerCase();
-                    return s.title.toLowerCase().contains(q) ||
-                        s.artist.toLowerCase().contains(q) ||
-                        s.code.contains(q);
-                  }).take(20).toList();
+                : _catalog.songs
+                    .where((s) {
+                      final q = query.toLowerCase();
+                      return s.title.toLowerCase().contains(q) ||
+                          s.artist.toLowerCase().contains(q) ||
+                          s.code.contains(q);
+                    })
+                    .take(20)
+                    .toList();
 
             return Dialog(
               backgroundColor: const Color(0xFF0C101B),
@@ -1740,7 +2214,10 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                       decoration: InputDecoration(
                         hintText: 'Search title, artist or code...',
                         hintStyle: const TextStyle(color: Colors.white38),
-                        prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00F2FE)),
+                        prefixIcon: const Icon(
+                          Icons.search_rounded,
+                          color: Color(0xFF00F2FE),
+                        ),
                         filled: true,
                         fillColor: Colors.black45,
                         border: OutlineInputBorder(
@@ -1757,7 +2234,12 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                     const SizedBox(height: 10),
                     Expanded(
                       child: filtered.isEmpty
-                          ? const Center(child: Text('No matching songs', style: TextStyle(color: Colors.white38)))
+                          ? const Center(
+                              child: Text(
+                                'No matching songs',
+                                style: TextStyle(color: Colors.white38),
+                              ),
+                            )
                           : ListView.builder(
                               itemCount: filtered.length,
                               itemBuilder: (context, i) {
@@ -1768,23 +2250,45 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
                                     s.title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  subtitle: Text('${s.code} • ${s.artist}', style: const TextStyle(color: Colors.white54)),
+                                  subtitle: Text(
+                                    '${s.code} • ${s.artist}',
+                                    style: const TextStyle(
+                                      color: Colors.white54,
+                                    ),
+                                  ),
                                   trailing: ElevatedButton(
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF003847),
                                       foregroundColor: const Color(0xFF00F2FE),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ),
                                     ),
-                                    child: const Text('RESERVE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    child: const Text(
+                                      'RESERVE',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                     onPressed: () {
                                       _flow.reserve(s);
                                       Navigator.of(context).pop();
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content: Text('✓ Reserved: [${s.code}] ${s.title}'),
-                                          backgroundColor: const Color(0xFF003847),
+                                          content: Text(
+                                            '✓ Reserved: [${s.code}] ${s.title}',
+                                          ),
+                                          backgroundColor: const Color(
+                                            0xFF003847,
+                                          ),
                                         ),
                                       );
                                     },
@@ -1861,24 +2365,4 @@ class _KaraokePlayerScreenState extends State<KaraokePlayerScreen> {
     );
   }
 
-  Widget _buildCompactBtn(String text, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        width: 26,
-        height: 26,
-        decoration: BoxDecoration(
-          color: const Color(0xFF161F30),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.white12),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          text,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-        ),
-      ),
-    );
-  }
 }

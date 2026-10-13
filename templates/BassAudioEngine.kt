@@ -7,8 +7,6 @@ import com.un4seen.bass.BASS
 import com.un4seen.bass.BASSMIDI
 import com.un4seen.bass.BASS_FX
 import java.io.File
-import java.io.FileOutputStream
-import java.util.Arrays
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -34,6 +32,39 @@ class BassAudioEngine(private val context: Context) {
     private var currentKeyOffset = 0
     private var currentTempoRate = 1.0f
     private var masterVolume = 1.0f
+    private var playbackStarted = false
+    private var polyphony = 512
+    private var reverbSetting = 4
+    @Volatile private var chorusSetting = 4
+    private var midiFile: File? = null
+    private val effectFilter = BASSMIDI.MIDIFILTERPROC { _, _, event, _, _ ->
+        if (event.event == BASSMIDI.MIDI_EVENT_CHORUS_LEVEL && chorusSetting != 4) {
+            event.param = effectLevel(chorusSetting)
+        }
+        true
+    }
+
+    private fun effectLevel(setting: Int): Int = when (setting) {
+        0 -> 0
+        1 -> 35
+        2 -> 70
+        else -> 100
+    }
+
+    fun setEffects(voices: Int, reverb: Int, chorus: Int) {
+        polyphony = voices.coerceIn(64, 512)
+        reverbSetting = reverb.coerceIn(0, 4)
+        chorusSetting = chorus.coerceIn(0, 4)
+        applyEffects()
+    }
+
+    private fun applyEffects() {
+        if (streamHandle == 0) return
+        BASS.BASS_ChannelSetAttribute(streamHandle, BASSMIDI.BASS_ATTRIB_MIDI_VOICES, polyphony.toFloat())
+        BASS.BASS_ChannelSetAttribute(streamHandle, BASSMIDI.BASS_ATTRIB_MIDI_REVERB, effectLevel(reverbSetting) / 100.0f)
+        BASSMIDI.BASS_MIDI_StreamSetFilter(streamHandle, true, effectFilter, null)
+        BASSMIDI.BASS_MIDI_StreamEvent(streamHandle, 0, BASSMIDI.MIDI_EVENT_CHORUS_LEVEL, effectLevel(chorusSetting))
+    }
 
     private val eqHandles = IntArray(10)
     private val eqGains = FloatArray(10) { 0.0f }
@@ -162,9 +193,9 @@ class BassAudioEngine(private val context: Context) {
         return try {
             val tempFile = File.createTempFile("bass_stream_", ".mid", context.cacheDir)
             tempFile.writeBytes(midiBytes)
-            tempFile.deleteOnExit()
+            midiFile = tempFile
 
-            // Flag 8392960 = 0x801100 (BASS_MIDI_DECAYEND | BASS_SAMPLE_FLOAT | BASS_STREAM_AUTOFREE)
+            // Keep the stream until explicit cleanup so completion queries retain a valid handle.
             // matching b6/b.java line 252.
             var stream = BASSMIDI.BASS_MIDI_StreamCreateFile(
                 tempFile.absolutePath, 0L, 0L, 8392960, 48000
@@ -190,9 +221,7 @@ class BassAudioEngine(private val context: Context) {
             // Attach active SoundFont (b6/b.java method c)
             attachFontsToStream()
 
-            // Setup Reverb and Chorus (b6/b.java lines 364 & 411)
-            BASS.BASS_ChannelSetAttribute(streamHandle, BASSMIDI.BASS_ATTRIB_MIDI_REVERB, 1.0f)
-            BASS.BASS_ChannelSetAttribute(streamHandle, 73746, 1.0f) // Chorus attribute (0x12012)
+            applyEffects()
 
             // Setup 10-band Equalizer
             applyEqualizer()
@@ -278,6 +307,7 @@ class BassAudioEngine(private val context: Context) {
         if (streamHandle != 0) {
             return try {
                 val ok = BASS.BASS_ChannelPlay(streamHandle, false)
+                playbackStarted = ok
                 if (!ok) {
                     Log.w(TAG, "BASS_ChannelPlay returned false with code: ${BASS.BASS_ErrorGetCode()}")
                 }
@@ -290,18 +320,22 @@ class BassAudioEngine(private val context: Context) {
         return false
     }
 
-    fun pause() {
+    fun pause(): Boolean {
         if (streamHandle != 0) {
-            try {
-                BASS.BASS_ChannelPause(streamHandle)
-            } catch (_: Throwable) {}
+            return try {
+                val ok = BASS.BASS_ChannelPause(streamHandle)
+                if (ok) playbackStarted = false
+                ok
+            } catch (_: Throwable) { false }
         }
+        return false
     }
 
     /**
      * Stop and cleanup stream matching original b6/b.java method t.
      */
     fun stop() {
+        playbackStarted = false
         if (streamHandle != 0) {
             try {
                 BASS.BASS_ChannelPause(streamHandle)
@@ -316,15 +350,18 @@ class BassAudioEngine(private val context: Context) {
             } catch (_: Throwable) {}
             streamHandle = 0
         }
+        midiFile?.delete()
+        midiFile = null
     }
 
-    fun seekTo(positionMs: Long) {
+    fun seekTo(positionMs: Long): Boolean {
         if (streamHandle != 0) {
-            try {
+            return try {
                 val bytes = BASS.BASS_ChannelSeconds2Bytes(streamHandle, positionMs / 1000.0)
                 BASS.BASS_ChannelSetPosition(streamHandle, bytes, 0)
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) { false }
         }
+        return false
     }
 
     fun getPositionMs(): Long {
@@ -362,16 +399,14 @@ class BassAudioEngine(private val context: Context) {
     }
 
     /**
-     * Clean status-based completion check from original NativeBassMidiEngine and MidiKaraokeEngine.
-     * Prevents premature triggers (requires >2000ms elapsed).
+     * Report natural completion only after a successful play.
+     * Explicit pause/stop clear playbackStarted and the activity cancels its watcher.
      */
     fun isEnded(): Boolean {
-        if (streamHandle == 0) return false
+        if (streamHandle == 0 || !playbackStarted) return false
         return try {
             val active = BASS.BASS_ChannelIsActive(streamHandle)
-            val pos = getPositionMs()
-            val dur = getDurationMs()
-            (active == 0 && pos > 2000) || (dur > 0 && pos >= (dur - 200) && dur > 2000)
+            active == BASS.BASS_ACTIVE_STOPPED
         } catch (_: Throwable) { false }
     }
 

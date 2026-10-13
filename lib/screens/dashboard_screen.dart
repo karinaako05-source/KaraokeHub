@@ -1,7 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../models/song_item.dart';
+
 import '../services/audio_engine_service.dart';
 import '../services/song_catalog_service.dart';
 import '../services/videoke_flow_manager.dart';
@@ -16,7 +17,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingObserver {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
   final SongCatalogService _catalog = SongCatalogService();
   final VideokeFlowManager _flow = VideokeFlowManager();
 
@@ -41,7 +43,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       setState(() {
         _hasStoragePermission = hasPerm;
       });
-      if (hasPerm && _catalog.songs.length <= 3) {
+      if (hasPerm && _catalog.songs.isEmpty) {
         _catalog.reloadCatalog();
       }
     }
@@ -51,9 +53,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPermission();
-      if (_catalog.songs.length <= 3) {
-        _catalog.reloadCatalog();
-      }
     }
   }
 
@@ -64,7 +63,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   void _updateTime() {
     if (mounted) {
       setState(() {
-        _currentTime = DateFormat('EEE, MMM d • hh:mm a').format(DateTime.now());
+        _currentTime =
+            DateFormat('EEE, MMM d • hh:mm a').format(DateTime.now());
       });
     }
   }
@@ -91,10 +91,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Storage Permission Warning Banner
-              if (!_hasStoragePermission || _catalog.songs.length <= 3) ...[
+              if (!_hasStoragePermission || _catalog.songs.isEmpty) ...[
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE65100).withOpacity(0.2),
                     borderRadius: BorderRadius.circular(10),
@@ -102,20 +105,35 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.folder_special_rounded, color: Color(0xFFFFB74D), size: 28),
+                      const Icon(
+                        Icons.folder_special_rounded,
+                        color: Color(0xFFFFB74D),
+                        size: 28,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'STORAGE PERMISSION REQUIRED',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                            Text(
+                              !_hasStoragePermission
+                                  ? 'STORAGE PERMISSION REQUIRED'
+                                  : 'NO SONGS FOUND',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'I-allow ang All Files Access para mabasa ang 42,772 kanta sa Download/idx.',
-                              style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 11),
+                              !_hasStoragePermission
+                                  ? 'Allow All Files Access to read your song library.'
+                                  : 'Place your song catalog or audio files in device storage.',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 11,
+                              ),
                             ),
                           ],
                         ),
@@ -125,13 +143,24 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFF9800),
                           foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
                         onPressed: () async {
                           await AudioEngineService().requestStoragePermission();
                         },
-                        child: const Text('ALLOW ACCESS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                        child: const Text(
+                          'ALLOW ACCESS',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -141,15 +170,34 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               Row(
                 children: [
                   _buildCircleBtn(Icons.settings_rounded, 'Settings', () {
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    );
                   }),
                   const SizedBox(width: 10),
-                  _buildCircleBtn(Icons.help_outline_rounded, 'Help', () => _showDialog('Help & User Guide', 'Videoke Operating Controls:\n• Keypad: Type 5-digit number and tap ENTER to reserve.\n• Queue: First-In-First-Out reservation queue with Priority Reserve.\n• Player: Authentic Key pitch shift (-12 to +12) and Tempo regulator.')),
+                  _buildCircleBtn(
+                    Icons.help_outline_rounded,
+                    'Help',
+                    () => _showDialog(
+                      'Help & User Guide',
+                      'Videoke Operating Controls:\n• Keypad: Type 5-digit number and tap ENTER to reserve.\n• Queue: First-In-First-Out reservation queue with Priority Reserve.\n• Player: Authentic Key pitch shift (-12 to +12) and Tempo regulator.',
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  _buildCircleBtn(Icons.qr_code_2_rounded, 'QR Remote', () => _showDialog('Mobile Remote Pairing', 'Scan QR code to connect mobile phones as wireless songbook remotes.')),
+                  _buildCircleBtn(
+                    Icons.qr_code_2_rounded,
+                    'QR Remote',
+                    () => _showDialog(
+                      'Mobile Remote Pairing',
+                      'Scan QR code to connect mobile phones as wireless songbook remotes.',
+                    ),
+                  ),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF101624),
                       borderRadius: BorderRadius.circular(20),
@@ -202,15 +250,23 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                                 width: 8,
                                 height: 8,
                                 decoration: BoxDecoration(
-                                  color: hasActiveSong ? const Color(0xFF00F2FE) : const Color(0xFFFFB74D),
+                                  color: hasActiveSong
+                                      ? const Color(0xFF00F2FE)
+                                      : const Color(0xFFFFB74D),
                                   shape: BoxShape.circle,
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                hasActiveSong ? 'STAGE LIVE • PLAYING' : 'STAGE READY • STANDBY',
+                                hasActiveSong
+                                    ? (_flow.isPlaying
+                                        ? 'STAGE LIVE • PLAYING'
+                                        : 'STAGE PAUSED')
+                                    : 'STAGE READY • STANDBY',
                                 style: TextStyle(
-                                  color: hasActiveSong ? const Color(0xFF00F2FE) : const Color(0xFFFFB74D),
+                                  color: hasActiveSong
+                                      ? const Color(0xFF00F2FE)
+                                      : const Color(0xFFFFB74D),
                                   fontWeight: FontWeight.bold,
                                   fontSize: 11,
                                   letterSpacing: 1.5,
@@ -220,7 +276,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            hasActiveSong ? _flow.currentSong!.title : 'KARAOKEHUB NEXT',
+                            hasActiveSong
+                                ? _flow.currentSong!.title
+                                : 'KARAOKEHUB NEXT',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 22,
@@ -249,21 +307,27 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         if (hasActiveSong) {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => KaraokePlayerScreen(song: _flow.currentSong!),
+                              builder: (_) =>
+                                  KaraokePlayerScreen(song: _flow.currentSong!),
                             ),
                           );
                         } else if (_catalog.songs.isNotEmpty) {
                           _flow.playSong(_catalog.songs.first);
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => KaraokePlayerScreen(song: _catalog.songs.first),
+                              builder: (_) => KaraokePlayerScreen(
+                                song: _catalog.songs.first,
+                              ),
                             ),
                           );
                         }
                       },
                       borderRadius: BorderRadius.circular(16),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [Color(0xFF00F2FE), Color(0xFF4FACFE)],
@@ -273,7 +337,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         child: Row(
                           children: [
                             Icon(
-                              hasActiveSong ? Icons.mic_external_on_rounded : Icons.play_arrow_rounded,
+                              hasActiveSong
+                                  ? Icons.mic_external_on_rounded
+                                  : Icons.play_arrow_rounded,
                               color: Colors.black,
                               size: 20,
                             ),
@@ -339,18 +405,24 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         if (hasActiveSong) {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => KaraokePlayerScreen(song: _flow.currentSong!),
+                              builder: (_) =>
+                                  KaraokePlayerScreen(song: _flow.currentSong!),
                             ),
                           );
                         } else if (_catalog.songs.isNotEmpty) {
                           _flow.playSong(_catalog.songs.first);
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => KaraokePlayerScreen(song: _catalog.songs.first),
+                              builder: (_) => KaraokePlayerScreen(
+                                song: _catalog.songs.first,
+                              ),
                             ),
                           );
                         } else {
-                          _showDialog('Stage Empty', 'Please search and select a song from the songbook first.');
+                          _showDialog(
+                            'Stage Empty',
+                            'Please search and select a song from the songbook first.',
+                          );
                         }
                       },
                     ),
@@ -374,14 +446,18 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                       title: 'RANKINGS',
                       subtitle: 'Hall of Fame Scores',
                       accentColor: const Color(0xFFFFB74D),
-                      onTap: () => _showDialog('Top Videoke Rankings', '1. Maria - 100 pts (Ang Huling El Bimbo)\n2. Alex - 99 pts (Bakit Ba Ikaw)\n3. Chris - 98 pts (Jopay)\n4. Sarah - 97 pts (Di Na Muli)'),
+                      onTap: () => _showDialog(
+                        'Top Videoke Rankings',
+                        '1. Maria - 100 pts (Ang Huling El Bimbo)\n2. Alex - 99 pts (Bakit Ba Ikaw)\n3. Chris - 98 pts (Jopay)\n4. Sarah - 97 pts (Di Na Muli)',
+                      ),
                     ),
 
                     // 5. Artist Directory
                     _buildHubCard(
                       icon: Icons.person_search_rounded,
                       title: 'ARTIST LIST',
-                      subtitle: '${_catalog.getArtistSummaries().length} Singers Catalog',
+                      subtitle:
+                          '${_catalog.getArtistSummaries().length} Singers Catalog',
                       accentColor: const Color(0xFF4DD0E1),
                       onTap: () => _showArtistModal(context),
                     ),
@@ -466,10 +542,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    color: Colors.white54,
-                    fontSize: 11,
-                  ),
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -514,14 +587,34 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: const Color(0xFF101624),
-                          child: Text('${i + 1}', style: const TextStyle(color: Color(0xFF4DD0E1), fontSize: 12)),
+                          child: Text(
+                            '${i + 1}',
+                            style: const TextStyle(
+                              color: Color(0xFF4DD0E1),
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
-                        title: Text(a['artist'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                        trailing: Text('${a['count']} songs', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        title: Text(
+                          a['artist'] as String,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        trailing: Text(
+                          '${a['count']} songs',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                          ),
+                        ),
                         onTap: () {
                           Navigator.of(context).pop();
                           Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const HomeScreen()),
+                            MaterialPageRoute(
+                              builder: (_) => const HomeScreen(),
+                            ),
                           );
                         },
                       );
@@ -542,12 +635,32 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF101624),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Text(content, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        content: Text(
+          content,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK', style: TextStyle(color: Color(0xFF00F2FE), fontWeight: FontWeight.bold)),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: Color(0xFF00F2FE),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),

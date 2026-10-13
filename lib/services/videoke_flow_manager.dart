@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/foundation.dart';
+
 import '../models/song_item.dart';
 import '../models/app_settings.dart';
 import 'audio_engine_service.dart';
@@ -9,86 +11,115 @@ class VideokeFlowManager extends ChangeNotifier {
   static final VideokeFlowManager _instance = VideokeFlowManager._internal();
   factory VideokeFlowManager() => _instance;
   VideokeFlowManager._internal() {
-    _audio.onSongEnded = _handleSongEnded;
-    _initSoundFont();
-  }
-
-  void _initSoundFont() {
-    final sfPath = AppSettings().selectedSf2Path;
-    _audio.setSoundFont(sfPath);
+    _audio.onSongEnded = (session) => _handleSongEnded(session);
+    _settings.addListener(_applySettings);
+    _applySettings();
   }
 
   final AudioEngineService _audio = AudioEngineService();
-
-  SongItem? _currentSong;
-  SongItem? get currentSong => _currentSong;
-
+  final AppSettings _settings = AppSettings();
   final List<SongItem> _queue = [];
-  List<SongItem> get queue => List.unmodifiable(_queue);
-
   final List<SongItem> _history = [];
-  List<SongItem> get history => List.unmodifiable(_history);
-
+  Future<void> _operations = Future.value();
+  Timer? _scoreTimer;
+  int _sessionId = 0;
+  SongItem? _currentSong;
   bool _isPlaying = false;
-  bool get isPlaying => _isPlaying;
-
-  int _pitch = 0; // -12 to +12 semitones
-  int get pitch => _pitch;
-
-  double _tempo = 1.0; // 0.5 to 1.5
-  double get tempo => _tempo;
-
-  int? _lastScore;
-  int? get lastScore => _lastScore;
-
   bool _isScoring = false;
-  bool get isScoring => _isScoring;
+  int _pitch = 0;
+  double _tempo = 1.0;
+  int? _lastScore;
+  String? _playbackError;
 
-  Future<void> playSong(SongItem song, {bool fromQueue = false}) async {
+  SongItem? get currentSong => _currentSong;
+  List<SongItem> get queue => List.unmodifiable(_queue);
+  List<SongItem> get history => List.unmodifiable(_history);
+  bool get isPlaying => _isPlaying;
+  bool get isScoring => _isScoring;
+  int get pitch => _pitch;
+  double get tempo => _tempo;
+  int? get lastScore => _lastScore;
+  String? get playbackError => _playbackError;
+  int get sessionId => _sessionId;
+
+  Future<void> _serialize(Future<void> Function() operation) {
+    final result = _operations.then((_) => operation());
+    _operations = result.catchError((Object error, StackTrace stack) {
+      _playbackError = 'Audio operation failed: $error';
+      debugPrint('Audio operation failed: $error');
+      notifyListeners();
+    });
+    return _operations;
+  }
+
+  void _applySettings() {
+    unawaited(
+      _serialize(() async {
+        await _audio.applySettings(_settings.audioSettings);
+      }),
+    );
+  }
+
+  int _beginSession() {
+    _scoreTimer?.cancel();
+    _scoreTimer = null;
+    _isScoring = false;
+    _lastScore = null;
+    _isPlaying = false;
+    _playbackError = null;
+    ++_sessionId;
+    _audio.beginSession(_sessionId);
+    return _sessionId;
+  }
+
+  Future<void> playSong(SongItem song, {bool fromQueue = false}) {
     if (_currentSong != null && _currentSong!.code != song.code) {
       _history.add(_currentSong!);
     }
-    if (fromQueue) {
-      _queue.removeWhere((item) => item.code == song.code);
-    }
-
+    if (fromQueue) _queue.removeWhere((item) => item.code == song.code);
+    final session = _beginSession();
     _currentSong = song;
     _pitch = 0;
     _tempo = 1.0;
-    _isScoring = false;
-    _lastScore = null;
-
-    bool loaded = false;
-    if (song.isBlob) {
-      loaded = await _audio.loadBlobSong(
-        blobPath: song.blobPath,
-        offset: song.blobOffset!,
-        length: song.blobLength!,
-      );
-    } else {
-      loaded = await _audio.loadSong(song.filePath);
-    }
-
-    if (loaded) {
-      await _audio.play();
-      _isPlaying = true;
-    } else {
-      _isPlaying = false;
-    }
     notifyListeners();
+    return _serialize(() async {
+      if (session != _sessionId) return;
+      await _audio.stop();
+      if (session != _sessionId) return;
+      await _audio.setSoundFont(_settings.selectedSf2Path);
+      if (session != _sessionId) return;
+      await _audio.applySettings(_settings.audioSettings);
+      if (session != _sessionId) return;
+      final loaded = song.isBlob
+          ? await _audio.loadBlobSong(
+              blobPath: song.blobPath,
+              offset: song.blobOffset!,
+              length: song.blobLength!,
+              sessionId: session,
+            )
+          : await _audio.loadSong(song.filePath, sessionId: session);
+      if (session != _sessionId) return;
+      if (loaded) {
+        await _audio.setPitch(0);
+        await _audio.setTempo(1.0);
+        if (session != _sessionId) return;
+        final played = await _audio.play();
+        if (session != _sessionId) return;
+        _isPlaying = played;
+      }
+      if (!_isPlaying)
+        _playbackError = 'Unable to play [${song.code}] ${song.title}';
+      notifyListeners();
+    });
   }
 
   Future<void> reserve(SongItem song, {bool priority = false}) async {
     if (priority) {
       _queue.removeWhere((item) => item.code == song.code);
       _queue.insert(0, song);
-    } else {
-      if (!_queue.any((item) => item.code == song.code)) {
-        _queue.add(song);
-      }
+    } else if (!_queue.any((item) => item.code == song.code)) {
+      _queue.add(song);
     }
-
-    // If machine is totally idle (no song loaded and not scoring), automatically play first reserved song
     if (_currentSong == null && !_isScoring) {
       await next();
     } else {
@@ -96,81 +127,78 @@ class VideokeFlowManager extends ChangeNotifier {
     }
   }
 
-  Future<void> togglePlayPause() async {
-    if (_currentSong == null) {
-      if (_queue.isNotEmpty) {
-        await next();
-      }
-      return;
-    }
-
-    if (_isPlaying) {
-      await _audio.pause();
-      _isPlaying = false;
-    } else {
-      await _audio.play();
-      _isPlaying = true;
-    }
-    notifyListeners();
-  }
+  Future<void> togglePlayPause() => _isPlaying ? pause() : play();
 
   Future<void> play() async {
-    if (_currentSong != null) {
-      await _audio.play();
-      _isPlaying = true;
-      notifyListeners();
-    } else if (_queue.isNotEmpty) {
-      await next();
-    }
-  }
-
-  Future<void> pause() async {
-    await _audio.pause();
-    _isPlaying = false;
-    notifyListeners();
-  }
-
-  Future<void> stop() async {
-    await _audio.stop();
-    _isPlaying = false;
-    _currentSong = null;
-    notifyListeners();
-  }
-
-  Future<void> next() async {
-    if (_queue.isEmpty) {
-      await stop();
+    if (_currentSong == null) {
+      if (_queue.isNotEmpty) await next();
       return;
     }
-    final nextSong = _queue.removeAt(0);
-    await playSong(nextSong, fromQueue: true);
+    final session = _sessionId;
+    await _serialize(() async {
+      if (session != _sessionId || _isScoring) return;
+      final played = await _audio.play();
+      if (session != _sessionId) return;
+      _isPlaying = played;
+      _playbackError = played ? null : 'Unable to resume playback';
+      notifyListeners();
+    });
+  }
+
+  Future<void> pause() {
+    final session = _sessionId;
+    return _serialize(() async {
+      if (session != _sessionId) return;
+      final paused = await _audio.pause();
+      if (session != _sessionId) return;
+      if (paused) _isPlaying = false;
+      notifyListeners();
+    });
+  }
+
+  Future<void> stop() {
+    final session = _beginSession();
+    _currentSong = null;
+    notifyListeners();
+    return _serialize(() async {
+      if (session == _sessionId) await _audio.stop();
+    });
+  }
+
+  Future<void> next() {
+    if (_queue.isEmpty) return stop();
+    return playSong(_queue.first, fromQueue: true);
   }
 
   Future<void> previous() async {
     if (_history.isEmpty) return;
-    final prevSong = _history.removeLast();
-    await playSong(prevSong);
+    final previous = _history.removeLast();
+    await playSong(previous);
   }
 
-  Future<void> replay() async {
-    if (_currentSong == null) return;
-    await _audio.seekTo(0);
-    await _audio.play();
-    _isPlaying = true;
-    notifyListeners();
+  Future<void> replay() {
+    final song = _currentSong;
+    return song == null ? Future.value() : playSong(song);
   }
 
-  Future<void> setPitch(int newPitch) async {
+  Future<void> setPitch(int newPitch) {
     _pitch = newPitch.clamp(-12, 12);
-    await _audio.setPitch(_pitch);
+    final pitch = _pitch;
+    final session = _sessionId;
     notifyListeners();
+    return _serialize(() async {
+      if (session == _sessionId) await _audio.setPitch(pitch);
+    });
   }
 
-  Future<void> setTempo(double newTempo) async {
-    _tempo = (newTempo * 10).round() / 10;
-    _tempo = _tempo.clamp(0.5, 1.5);
-    await _audio.setTempo(_tempo);
+  Future<void> setTempo(double newTempo) {
+    _tempo = ((newTempo * 20).round() / 20).clamp(0.5, 1.5);
+    final tempo = _tempo;
+    final session = _sessionId;
     notifyListeners();
+    return _serialize(() async {
+      if (session == _sessionId) await _audio.setTempo(tempo);
+    });
   }
 
   void removeFromQueue(String code) {
@@ -184,64 +212,55 @@ class VideokeFlowManager extends ChangeNotifier {
   }
 
   Future<bool> switchSoundFont(String? path) async {
-    final ok = await _audio.setSoundFont(path);
+    var ok = false;
+    await _serialize(() async {
+      ok = await _audio.setSoundFont(path);
+    });
     if (ok) {
-      final settings = AppSettings();
-      settings.selectedSf2Path = path;
-      if (path != null) {
-        settings.selectedSf2Name = path.split('/').last;
-      } else {
-        settings.selectedSf2Name = 'Automatic (Best Available)';
-      }
-      settings.saveSettings();
-      notifyListeners();
+      _settings.selectedSf2Path = path;
+      _settings.selectedSf2Name =
+          path?.split('/').last ?? 'Automatic (Best Available)';
+      _settings.saveSettings();
     }
     return ok;
   }
 
-  void showScore() {
-    _handleSongEnded(force: true);
-  }
+  void showScore() => _handleSongEnded(_sessionId, force: true);
 
-  void _handleSongEnded({bool force = false}) async {
-    if (_isScoring || _currentSong == null) return;
-
-    if (!force) {
-      // Guard against false premature 0ms triggers
-      final posMs = await _audio.getPosition();
-      final durMs = await _audio.getDuration();
-      if (durMs > 10000 && posMs < 3000) {
-        return;
-      }
-    }
-
+  Future<void> _handleSongEnded(int session, {bool force = false}) async {
+    if (session != _sessionId || _isScoring || _currentSong == null) return;
     _isScoring = true;
-    // Generate authentic videoke score (85 - 100)
-    final random = Random();
-    final score = 85 + random.nextInt(16); // 85 to 100
+    _isPlaying = false;
+    if (force) {
+      await _serialize(() async {
+        if (session == _sessionId) await _audio.pause();
+      });
+      if (session != _sessionId) return;
+    }
+    if (!_settings.scoreEnabled || _settings.scoreMode == 0) {
+      await next();
+      return;
+    }
+    final minimum = [85, 70, 61][_settings.scoreDifficulty.clamp(0, 2)];
+    final score = minimum + Random().nextInt(101 - minimum);
     _lastScore = score;
     notifyListeners();
-
-    // Play corresponding fanfare SFX
-    String sfxName;
-    if (score == 100) {
-      sfxName = 'score_100';
-    } else if (score >= 91) {
-      sfxName = 'score_91_99';
-    } else if (score >= 81) {
-      sfxName = 'score_81_90';
-    } else if (score >= 76) {
-      sfxName = 'score_76_80';
-    } else {
-      sfxName = 'score_61_75';
+    if (_settings.fanfareLevel > 0) {
+      final sound = score == 100
+          ? 'score_100'
+          : score >= 91
+              ? 'score_91_99'
+              : score >= 81
+                  ? 'score_81_90'
+                  : score >= 76
+                      ? 'score_76_80'
+                      : 'score_61_75';
+      await _audio.playSfx(sound, volume: _settings.fanfareLevel / 3);
+      if (session != _sessionId) return;
     }
-    await _audio.playSfx(sfxName);
-
-    // Wait 4 seconds for score display then advance to next queued song
-    Future.delayed(const Duration(seconds: 4), () {
-      _isScoring = false;
-      notifyListeners();
-      next();
+    _scoreTimer = Timer(const Duration(seconds: 4), () {
+      if (session != _sessionId || !_isScoring) return;
+      unawaited(next());
     });
   }
 }
