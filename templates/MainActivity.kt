@@ -153,11 +153,21 @@ class MainActivity: FlutterActivity() {
             val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
                 try {
-                    val file = File("/sdcard/Download/karaoke_crash.log")
                     val sw = StringWriter()
                     val pw = PrintWriter(sw)
                     throwable.printStackTrace(pw)
-                    file.appendText("\n[${Date()}] [JAVA/KOTLIN UNCAUGHT CRASH - ${thread.name}]\n$sw\n----------------------------------------\n")
+                    val text = "\n[${Date()}] [JAVA/KOTLIN UNCAUGHT CRASH - ${thread.name}]\n$sw\n----------------------------------------\n"
+                    val logFiles = listOfNotNull(
+                        File(getExternalFilesDir(null), "karaoke_crash.log"),
+                        File(cacheDir, "karaoke_crash.log"),
+                        File("/sdcard/Download/karaoke_crash.log")
+                    )
+                    for (f in logFiles) {
+                        try {
+                            f.parentFile?.mkdirs()
+                            f.appendText(text)
+                        } catch (_: Throwable) {}
+                    }
                 } catch (_: Throwable) {}
                 defaultHandler?.uncaughtException(thread, throwable)
             }
@@ -550,22 +560,23 @@ class MainActivity: FlutterActivity() {
                             if (!name.isNullOrEmpty()) {
                                 val assetPath = "assets/audio/sfx/$name.mp3"
                                 val key = FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(assetPath)
-                                val afd: AssetFileDescriptor = assets.openFd(key)
-                                sfxPlayer?.release()
-                                sfxPlayer = MediaPlayer().apply {
-                                    setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                                    afd.close()
-                                    prepare()
-                                    setVolume(volume, volume)
-                                    start()
-                                    setOnCompletionListener {
+                                assets.openFd(key).use { afd ->
+                                    sfxPlayer?.release()
+                                    val player = MediaPlayer()
+                                    player.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                                    player.prepare()
+                                    player.setVolume(volume, volume)
+                                    player.start()
+                                    player.setOnCompletionListener {
                                         it.release()
                                         if (sfxPlayer == it) sfxPlayer = null
                                     }
+                                    sfxPlayer = player
                                 }
                             }
                             result.success(true)
                         } catch (e: Exception) {
+                            Log.e("MainActivity", "playSfx failed for $name", e)
                             result.success(false)
                         }
                     }
@@ -655,8 +666,16 @@ class MainActivity: FlutterActivity() {
             }
         }
 
-        if (midiBytes == null || midiBytes.isEmpty()) {
+        if (midiBytes == null || midiBytes.size < 14) {
             Log.e("MainActivity", "Failed to obtain decrypted MIDI for slice offset=$offsetSectors")
+            return null
+        }
+        val isMThd = midiBytes[0] == 'M'.code.toByte() &&
+                     midiBytes[1] == 'T'.code.toByte() &&
+                     midiBytes[2] == 'h'.code.toByte() &&
+                     midiBytes[3] == 'd'.code.toByte()
+        if (!isMThd) {
+            Log.e("MainActivity", "Decrypted bytes are not valid MIDI (header mismatch)")
             return null
         }
 

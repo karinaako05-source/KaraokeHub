@@ -4,15 +4,26 @@ import 'package:flutter/material.dart';
 import 'screens/dashboard_screen.dart';
 
 void _logCrash(String type, Object error, StackTrace? stack) {
-  try {
-    final file = File('/sdcard/Download/karaoke_crash.log');
-    final now = DateTime.now().toIso8601String();
-    file.writeAsStringSync(
-      '[$now] [$type]\n$error\n${stack ?? ""}\n----------------------------------------\n',
-      mode: FileMode.append,
-      flush: true,
-    );
-  } catch (_) {}
+  final now = DateTime.now().toIso8601String();
+  final message =
+      '[$now] [$type]\n$error\n${stack ?? ""}\n----------------------------------------\n';
+  final candidates = [
+    '/sdcard/Android/data/com.karaokehub.next/files/karaoke_crash.log',
+    '/storage/emulated/0/Android/data/com.karaokehub.next/files/karaoke_crash.log',
+    '/sdcard/Download/karaoke_crash.log',
+    '/storage/emulated/0/Download/karaoke_crash.log',
+  ];
+  for (final path in candidates) {
+    try {
+      final file = File(path);
+      file.parent.createSync(recursive: true);
+      file.writeAsStringSync(
+        message,
+        mode: FileMode.append,
+        flush: true,
+      );
+    } catch (_) {}
+  }
 }
 
 void main() {
